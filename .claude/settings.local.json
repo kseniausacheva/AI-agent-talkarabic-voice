@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where ffmpeg *)",
+      "Bash(where python *)",
+      "Bash(where py *)",
+      "Bash(py -0)",
+      "Bash(py -3.11 --version)",
+      "Bash(where docker *)",
+      "Bash(docker --version)",
+      "Bash(py -3.13 -m venv \"D:\\\\AI agent talkarabic voice\\\\backend\\\\.venv\")",
+      "Bash(.venv/Scripts/python -m pip install --upgrade pip --quiet)",
+      "Bash(.venv/Scripts/python -m pip install -r requirements-llm-only.txt)",
+      "Bash(.venv/Scripts/python -m scripts.smoke_test_llm)",
+      "Bash(.venv/Scripts/python -m pip install -r requirements-llm-only.txt --upgrade)",
+      "Bash(ls -la \"D:\\\\AI agent talkarabic voice/.claude\" 2>&1; echo \"---\"; ls -la \"C:\\\\Users\\\\Ksenia\\\\.claude\\\\skills\" 2>&1 | head -30)",
+      "Bash(where node *)",
+      "Bash(where npm *)",
+      "Bash(npm --version)",
+      "Bash(where npx *)",
+      "Bash(npx -y impeccable@latest --help)",
+      "Bash(npx -y impeccable@latest skills install)",
+      "Bash(npx -y impeccable@latest skills install --help)",
+      "Bash(node .claude/skills/impeccable/scripts/context.mjs)",
+      "Bash(node .claude/skills/impeccable/scripts/palette.mjs)",
+      "Bash(npx -y create-next-app@latest frontend --typescript --tailwind --app --eslint --src-dir --import-alias \"@/*\" --no-turbopack --use-npm --yes)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/session)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/results/demo-abc123)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path\")",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}

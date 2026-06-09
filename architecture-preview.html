@@ -1,0 +1,1134 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Чеклист клиента — Школа арабского</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: oklch(1 0 0);
+      --surface: oklch(0.975 0.008 235);
+      --surface-elev: oklch(0.955 0.012 235);
+      --ink: oklch(0.2 0.025 250);
+      --muted: oklch(0.52 0.02 240);
+      --subtle: oklch(0.7 0.015 240);
+      --primary: oklch(0.56 0.15 245);
+      --primary-ink: oklch(0.985 0 0);
+      --accent: oklch(0.56 0.2 25);
+      --recording: oklch(0.56 0.2 25);
+      --success: oklch(0.52 0.11 155);
+      --line: oklch(0.91 0.008 235);
+      --line-strong: oklch(0.82 0.012 235);
+      --radius-sm: 0.375rem;
+      --radius-md: 0.625rem;
+      --radius-lg: 1rem;
+      --font-sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: oklch(0.16 0.018 245);
+        --surface: oklch(0.21 0.022 245);
+        --surface-elev: oklch(0.25 0.025 245);
+        --ink: oklch(0.96 0.008 235);
+        --muted: oklch(0.7 0.018 240);
+        --subtle: oklch(0.52 0.014 240);
+        --primary: oklch(0.72 0.17 245);
+        --primary-ink: oklch(0.16 0.018 245);
+        --accent: oklch(0.68 0.22 25);
+        --recording: oklch(0.68 0.22 25);
+        --line: oklch(0.3 0.014 240);
+        --line-strong: oklch(0.4 0.018 240);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light dark; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    ::selection { background: oklch(from var(--primary) l c h / 0.22); color: var(--ink); }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+    code, pre, .mono { font-family: var(--font-mono); font-feature-settings: "ss01", "cv11"; }
+    a { color: var(--primary); text-decoration: none; text-underline-offset: 3px; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 64rem; margin: 0 auto; padding: 0 1.5rem; }
+
+    header.hero { padding: 5rem 0 4rem; border-bottom: 1px solid var(--line); }
+    .eyebrow-tag {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      font-size: 0.75rem; color: var(--muted); margin-bottom: 2rem;
+    }
+    .eyebrow-tag::before {
+      content: ""; width: 6px; height: 6px; border-radius: 9999px; background: var(--primary);
+    }
+    h1 {
+      font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+      font-weight: 600; letter-spacing: -0.04em; line-height: 1.05;
+      margin: 0 0 1.5rem; max-width: 32ch; text-wrap: balance;
+    }
+    h1 em { color: var(--primary); font-style: normal; }
+    .lead { font-size: 1.125rem; color: var(--muted); line-height: 1.6; max-width: 60ch; text-wrap: pretty; }
+
+    section { padding: 4rem 0; border-bottom: 1px solid var(--line); }
+    section:last-of-type { border-bottom: none; }
+    .section-head { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 2.5rem; }
+    .section-num { font-family: var(--font-mono); font-size: 0.75rem; color: var(--subtle); }
+    h2 {
+      font-size: clamp(1.375rem, 1.2rem + 0.6vw, 1.625rem);
+      font-weight: 600; letter-spacing: -0.02em; margin: 0; text-wrap: balance;
+    }
+    .section-lead { color: var(--muted); font-size: 1rem; max-width: 60ch; margin: 0 0 2rem; text-wrap: pretty; }
+
+    .diagram {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius-lg); padding: 1.5rem; overflow-x: auto;
+    }
+    .diagram svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+
+    .grid {
+      display: grid; gap: 0.75rem;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius-lg); padding: 1.5rem;
+    }
+    .card h3 { font-size: 0.95rem; font-weight: 500; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+    .card p { font-size: 0.9rem; color: var(--muted); margin: 0; line-height: 1.55; text-wrap: pretty; }
+    .card .meta {
+      display: inline-block; font-family: var(--font-mono);
+      font-size: 0.7rem; color: var(--subtle); margin-bottom: 0.75rem;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td {
+      text-align: left; padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--line); vertical-align: top;
+    }
+    th { font-weight: 500; color: var(--muted); font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; }
+    td.method { font-family: var(--font-mono); font-size: 0.8rem; }
+    td.method .verb {
+      display: inline-block; padding: 0.15rem 0.45rem;
+      border-radius: var(--radius-sm); font-weight: 500;
+      font-size: 0.7rem; margin-right: 0.5rem; letter-spacing: 0.04em;
+    }
+    .verb-get { background: oklch(from var(--primary) l c h / 0.15); color: var(--primary); }
+    .verb-post { background: oklch(from var(--accent) l c h / 0.15); color: var(--accent); }
+
+    nav.toc {
+      position: sticky; top: 0;
+      background: oklch(from var(--bg) l c h / 0.85);
+      backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); z-index: 10;
+    }
+    nav.toc ul {
+      display: flex; gap: 1.5rem; list-style: none;
+      padding: 1rem 1.5rem; max-width: 64rem;
+      margin: 0 auto; overflow-x: auto;
+    }
+    nav.toc a { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+    nav.toc a:hover { color: var(--ink); text-decoration: none; }
+
+    footer { padding: 3rem 0; border-top: 1px solid var(--line); color: var(--subtle); font-size: 0.8rem; }
+    footer .container { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+
+    ul.clean { list-style: none; padding: 0; margin: 0; }
+    ul.clean li {
+      padding: 0.5rem 0; border-bottom: 1px solid var(--line);
+      display: flex; gap: 0.75rem; align-items: baseline;
+    }
+    ul.clean li:last-child { border-bottom: none; }
+    ul.clean .label { color: var(--muted); font-size: 0.85rem; min-width: 9rem; }
+    ul.clean .value { color: var(--ink); font-size: 0.95rem; flex: 1; }
+    ul.clean .value code {
+      font-size: 0.85rem; background: var(--surface-elev);
+      padding: 0.1rem 0.4rem; border-radius: var(--radius-sm);
+    }
+
+    .deploy-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .deploy-card {
+      padding: 1.5rem; border: 1px solid var(--line); border-radius: var(--radius-lg);
+      background: var(--surface); display: flex; flex-direction: column; gap: 0.75rem;
+    }
+    .deploy-card .price { font-family: var(--font-mono); font-size: 0.9rem; color: var(--primary); }
+    .deploy-card .pros, .deploy-card .cons { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+    .deploy-card .pros::before { content: "+ "; color: var(--success); font-weight: 600; }
+    .deploy-card .cons::before { content: "− "; color: var(--accent); font-weight: 600; }
+    .deploy-card.recommend {
+      border-color: oklch(from var(--primary) l c h / 0.45);
+      background: oklch(from var(--primary) l c h / 0.05);
+    }
+    .deploy-card .badge {
+      display: inline-block; font-size: 0.65rem;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--primary); font-weight: 600;
+    }
+
+    .recorder-states { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .state-tile {
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius-lg); padding: 1.25rem;
+      display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start;
+    }
+    .state-tile .icon {
+      width: 36px; height: 36px; border-radius: 9999px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 1rem; color: var(--primary-ink); background: var(--primary);
+    }
+    .state-tile.recording .icon { background: var(--recording); color: white; }
+    .state-tile.processing .icon { background: var(--surface-elev); color: var(--muted); }
+    .state-tile.preview .icon { background: var(--accent); color: white; }
+    .state-tile.submitted .icon { background: oklch(from var(--success) l c h / 0.15); color: var(--success); }
+    .state-tile .name { font-size: 0.95rem; font-weight: 500; }
+    .state-tile .desc { font-size: 0.82rem; color: var(--muted); line-height: 1.5; text-wrap: pretty; }
+
+    /* USER JOURNEY */
+    .journey-intro {
+      background: oklch(from var(--primary) l c h / 0.06);
+      border: 1px solid oklch(from var(--primary) l c h / 0.2);
+      border-radius: var(--radius-lg); padding: 1.5rem 1.75rem;
+      margin-bottom: 2.5rem; font-size: 1rem; line-height: 1.6;
+      color: var(--ink); text-wrap: pretty;
+    }
+    .journey-intro strong { color: var(--primary); }
+
+    .steps { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: grid; grid-template-columns: 4rem 1fr;
+      gap: 1.5rem; padding: 2rem 0; border-bottom: 1px solid var(--line);
+    }
+    .step:last-child { border-bottom: none; }
+    .step-num {
+      width: 2.75rem; height: 2.75rem; border-radius: 9999px;
+      background: var(--surface); border: 1px solid var(--line-strong);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-mono); font-size: 0.95rem; font-weight: 500; color: var(--ink);
+    }
+    .step.key .step-num { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+    .step-body { min-width: 0; }
+    .step-title { font-size: 1.15rem; font-weight: 600; margin: 0 0 0.4rem; letter-spacing: -0.015em; }
+    .step-where {
+      font-family: var(--font-mono); font-size: 0.75rem;
+      color: var(--subtle); margin-bottom: 1rem; display: block;
+    }
+    .step-where::before { content: "📍 "; opacity: 0.7; }
+    .step-row {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1rem; margin-top: 1rem;
+    }
+    @media (max-width: 760px) {
+      .step-row { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 3rem 1fr; gap: 1rem; }
+    }
+    .step-mock {
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: var(--radius-md); overflow: hidden; font-size: 0.78rem;
+    }
+    .mock-browser {
+      display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 0.75rem; background: var(--surface);
+      border-bottom: 1px solid var(--line); font-family: var(--font-mono);
+      font-size: 0.7rem; color: var(--muted);
+    }
+    .mock-browser::before {
+      content: "● ● ●"; letter-spacing: 0.15em;
+      color: var(--subtle); font-size: 0.45rem;
+    }
+    .mock-body { padding: 1rem; display: flex; flex-direction: column; gap: 0.55rem; min-height: 7rem; }
+    .mock-headline { font-weight: 600; color: var(--ink); font-size: 0.92rem; letter-spacing: -0.01em; }
+    .mock-headline em { color: var(--primary); font-style: normal; }
+    .mock-text { color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+    .mock-btn {
+      align-self: flex-start; background: var(--primary); color: var(--primary-ink);
+      padding: 0.45rem 0.9rem; border-radius: 9999px;
+      font-size: 0.78rem; font-weight: 500;
+    }
+    .mock-btn.ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
+    .mock-rec {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.4rem 0.9rem 0.4rem 0.45rem;
+      background: var(--primary); color: var(--primary-ink);
+      border-radius: 9999px; font-size: 0.78rem; font-weight: 500;
+      align-self: flex-start;
+    }
+    .mock-rec::before {
+      content: "🎙"; width: 1.4rem; height: 1.4rem;
+      background: oklch(0 0 0 / 0.15); border-radius: 9999px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.7rem;
+    }
+    .mock-rec.recording { background: var(--recording); color: white; }
+    .mock-rec.recording::before { content: "■"; }
+    .mock-permission {
+      background: var(--surface); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.78rem;
+    }
+    .mock-permission .perm-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      margin-bottom: 0.6rem; color: var(--ink); font-weight: 500;
+    }
+    .mock-permission .perm-row::before { content: "🎤"; font-size: 0.95rem; }
+    .mock-permission .perm-buttons { display: flex; gap: 0.5rem; }
+    .mock-permission .perm-buttons span {
+      font-size: 0.72rem; padding: 0.3rem 0.65rem; border-radius: var(--radius-sm);
+    }
+    .mock-permission .allow { background: var(--primary); color: white; }
+    .mock-permission .block { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+    .mock-progress {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.72rem; color: var(--muted); margin-bottom: 0.25rem;
+    }
+    .mock-progress .dots { display: flex; gap: 0.2rem; }
+    .mock-progress .dots span {
+      height: 4px; border-radius: 9999px;
+      background: var(--line); width: 1rem;
+    }
+    .mock-progress .dots span.active { background: var(--primary); width: 1.8rem; }
+    .mock-progress .dots span.done { background: var(--muted); }
+    .mock-timer {
+      font-family: var(--font-mono); font-size: 1.05rem;
+      color: var(--ink); font-feature-settings: "tnum";
+    }
+    .mock-input {
+      background: var(--surface); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm); padding: 0.6rem 0.75rem;
+      font-family: var(--font-mono); font-size: 0.75rem;
+      color: var(--ink); line-height: 1.5;
+    }
+    .mock-checklist { display: flex; flex-direction: column; gap: 0.4rem; }
+    .mock-check {
+      display: flex; gap: 0.5rem; align-items: flex-start;
+      font-size: 0.78rem; color: var(--ink);
+    }
+    .mock-check .icon {
+      width: 1.05rem; height: 1.05rem; border-radius: 9999px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; flex-shrink: 0; margin-top: 0.1rem;
+    }
+    .mock-check .icon.ok { background: oklch(from var(--success) l c h / 0.15); color: var(--success); }
+    .mock-check .icon.warn { background: oklch(from var(--accent) l c h / 0.15); color: var(--accent); }
+    .mock-check .icon.miss { background: var(--surface-elev); color: var(--subtle); }
+    .mock-cat {
+      font-size: 0.7rem; color: var(--muted); letter-spacing: 0.03em;
+      margin-top: 0.4rem; margin-bottom: 0.1rem; font-weight: 500;
+    }
+    .mock-spinner { display: inline-flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.78rem; }
+    .mock-spinner::before { content: "↻"; display: inline-block; animation: spin 1.5s linear infinite; color: var(--primary); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .mock-channel {
+      font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 9999px;
+      background: var(--surface-elev); color: var(--muted);
+      font-family: var(--font-mono); display: inline-block; margin-right: 0.3rem;
+    }
+
+    .step-meta { display: grid; grid-template-columns: 1fr; gap: 0.6rem; font-size: 0.85rem; }
+    .meta-card {
+      padding: 0.75rem 0.9rem; border-radius: var(--radius-md);
+      border: 1px solid var(--line); background: var(--surface); line-height: 1.45;
+    }
+    .meta-card .meta-label {
+      font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase;
+      font-weight: 500; margin-bottom: 0.35rem; display: block;
+    }
+    .meta-card.user .meta-label { color: var(--primary); }
+    .meta-card.user .meta-label::before { content: "👤 "; }
+    .meta-card.system .meta-label { color: var(--accent); }
+    .meta-card.system .meta-label::before { content: "⚙ "; }
+    .meta-card .meta-text { color: var(--ink); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  </style>
+</head>
+<body>
+
+<nav class="toc" aria-label="Содержание">
+  <ul>
+    <li><a href="#journey">Как пользуется</a></li>
+    <li><a href="#questions">10 вопросов</a></li>
+    <li><a href="#arch">Архитектура</a></li>
+    <li><a href="#flow">Поток сессии</a></li>
+    <li><a href="#langgraph">LangGraph</a></li>
+    <li><a href="#recorder">Рекордер</a></li>
+    <li><a href="#api">API</a></li>
+    <li><a href="#stack">Стек</a></li>
+    <li><a href="#deploy">Деплой</a></li>
+  </ul>
+</nav>
+
+<header class="hero">
+  <div class="container">
+    <div class="eyebrow-tag">Внутренний инструмент · Школа арабского / v0.1</div>
+    <h1>Как работает <em>голосовой чеклист</em> клиента школы арабского</h1>
+    <p class="lead">
+      Менеджер после звонка или переписки с клиентом наговаривает голосом ответы
+      на 10 вопросов про клиента. Локальный Whisper транскрибирует,
+      MiniMax M3 структурирует ответы в чеклист по категориям. На выходе —
+      Markdown-файл для CRM или Telegram-чата команды.
+    </p>
+  </div>
+</header>
+
+<section id="journey">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">00</span>
+      <h2>Как пользуется этим менеджер школы</h2>
+    </div>
+
+    <div class="journey-intro">
+      <strong>Сценарий:</strong> менеджер только что закончил разговор с потенциальной
+      ученицей Анной — она написала в Telegram, потом ответила голосовым в WhatsApp,
+      обсудили цели. Менеджер открывает наш инструмент, <strong>наговаривает голосом</strong>
+      ответы по шаблону из 10 вопросов за 5–7 минут, и получает готовый <code>.md</code>
+      чеклист. Кидает его в командный чат или прикрепляет к карточке клиента в CRM.
+      <strong>Никакой регистрации.</strong>
+    </div>
+
+    <div class="steps">
+
+      <div class="step key">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3 class="step-title">Открывает инструмент после разговора с клиентом</h3>
+          <span class="step-where">talkarabic.app — главная (внутренняя ссылка для менеджеров)</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app</div>
+              <div class="mock-body">
+                <div class="mock-text" style="font-size: 0.7rem;">● Внутренний инструмент · Школа арабского</div>
+                <div class="mock-headline">Чеклист клиента <em>за 7 минут.</em></div>
+                <div class="mock-text">Наговариваете 10 ответов, получаете готовый .md.</div>
+                <div class="mock-btn">Новый клиент — начать →</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Только что закончил переписку или звонок (Telegram, WhatsApp, телефон). Открывает страницу, нажимает «Новый клиент — начать».</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">Backend создаёт сессию. Первые 4 вопроса берутся из фиксированного шаблона — никаких вызовов LLM. Ответ за &lt;200мс.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3 class="step-title">Браузер просит разрешить микрофон</h3>
+          <span class="step-where">один раз за сессию</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-permission">
+                  <div class="perm-row">talkarabic.app хочет:</div>
+                  <div class="mock-text" style="margin-bottom: 0.6rem;">Использовать ваш микрофон</div>
+                  <div class="perm-buttons">
+                    <span class="allow">Разрешить</span>
+                    <span class="block">Запретить</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Нажимает «Разрешить». Браузер запомнит выбор для следующих сессий.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">Стандартный prompt браузера, не наш модал. Без разрешения запись не запустится.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step key">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3 class="step-title">Раунд 1: знакомство и мотивация (4 вопроса)</h3>
+          <span class="step-where">/session — раунд 1 из 3</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-progress">
+                  <span>Раунд 1 из 3</span>
+                  <div class="dots"><span class="active"></span><span></span><span></span></div>
+                </div>
+                <div class="mock-headline">Знакомство и мотивация</div>
+                <div class="mock-text"><strong style="color: var(--ink);">В1.</strong> Имя клиента и где находится?</div>
+                <div class="mock-rec">Записать ответ</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В2.</strong> Откуда узнал о школе?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В3.</strong> Зачем учит арабский?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В4.</strong> Какой диалект?</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Видит 4 вопроса первого раунда. Все одновременно — может отвечать в любом порядке.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Почему именно эти вопросы</span>
+                <span class="meta-text">Имя, локация, источник лида, мотивация, диалект — базовый минимум для квалификации клиента и подбора программы.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step key">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3 class="step-title">Наговаривает ответ голосом</h3>
+          <span class="step-where">кнопка становится красной, идёт запись</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-text"><strong style="color: var(--ink);">В1.</strong> Имя клиента и где находится?</div>
+                <div style="display: flex; gap: 1rem; align-items: center; padding: 0.5rem 0;">
+                  <div class="mock-rec recording">Стоп</div>
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="color: var(--recording); font-size: 0.72rem; font-weight: 500;">Идёт запись</span>
+                    <span class="mock-timer">00:18</span>
+                  </div>
+                </div>
+                <div class="mock-text" style="font-size: 0.7rem; font-style: italic;">«Клиентку зовут Анна, она из Алматы, часовой пояс GMT плюс пять...»</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Говорит в микрофон 10–40 секунд. Своими словами пересказывает то, что узнал от клиента в Telegram / WhatsApp / по телефону.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">Браузер пишет webm/Opus аудио в память. На сервер пока ничего не уходит. Видна pulse-анимация и таймер.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h3 class="step-title">Whisper транскрибирует — короткая пауза</h3>
+          <span class="step-where">спиннер «Транскрибируем…»</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-text"><strong style="color: var(--ink);">В1.</strong> Имя клиента и где находится?</div>
+                <div style="padding: 1rem 0;">
+                  <div class="mock-spinner">Транскрибируем ответ…</div>
+                </div>
+                <div class="mock-text" style="font-size: 0.7rem; color: var(--subtle);">Аудио → ffmpeg → wav → Whisper</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Ждёт ~3–8 секунд (зависит от длины ответа и мощности backend).</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">webm уходит на <code>/api/session/transcribe</code>. Backend конвертирует в wav 16kHz через ffmpeg, прогоняет через локальный Whisper, возвращает текст.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step key">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h3 class="step-title">Правит транскрипт (имена клиентов, диалекты, термины)</h3>
+          <span class="step-where">текстовое поле с черновиком</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-text" style="font-size: 0.7rem;">Проверьте транскрипцию и при необходимости отредактируйте</div>
+                <div class="mock-input">Клиентку зовут Анна, она из Алматы, часовой пояс GMT+5.</div>
+                <div style="display: flex; gap: 0.5rem;">
+                  <div class="mock-btn">✓ Подтвердить</div>
+                  <div class="mock-btn ghost">↺ Перезаписать</div>
+                </div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Читает черновик, поправляет имя клиента или название диалекта если Whisper неправильно расслышал. Подтверждает.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Почему так</span>
+                <span class="meta-text">Whisper иногда косячит на именах собственных и арабских терминах (MSA, фусха, амийя). Дать пользователю быстро поправить дешевле, чем разбираться с кривым чеклистом.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h3 class="step-title">Закрывает все 4 вопроса раунда 1</h3>
+          <span class="step-where">галочки появляются по мере подтверждения</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-check"><span class="icon ok">✓</span><span>В1. Имя и локация — <span style="color: var(--muted);">записано</span></span></div>
+                <div class="mock-check"><span class="icon ok">✓</span><span>В2. Откуда узнал — <span style="color: var(--muted);">Instagram</span></span></div>
+                <div class="mock-check"><span class="icon ok">✓</span><span>В3. Цель — <span style="color: var(--muted);">муж-египтянин</span></span></div>
+                <div class="mock-text" style="margin-top: 0.4rem;"><strong>В4.</strong> Какой диалект?</div>
+                <div class="mock-rec">Записать ответ</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Кнопка «Дальше» становится активной только когда все 4 подтверждены.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">Каждая запись — отдельный вызов <code>/transcribe</code>. Подтверждённые тексты копятся в state браузера.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step key">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <h3 class="step-title">Жмёт «Дальше» → агент сохраняет резюме и даёт раунд 2</h3>
+          <span class="step-where">пауза ~3–5 секунд</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-progress">
+                  <span>Раунд 2 из 3</span>
+                  <div class="dots"><span class="done"></span><span class="active"></span><span></span></div>
+                </div>
+                <div class="mock-headline">Опыт и формат</div>
+                <div class="mock-text" style="font-size: 0.72rem;">Резюме раунда 1 ▾</div>
+                <div class="mock-text"><strong style="color: var(--ink);">В5.</strong> Текущий уровень арабского?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В6.</strong> Опыт онлайн-курсов?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В7.</strong> Готов к Zoom?</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Получает 3 следующих вопроса второго раунда. Может развернуть резюме раунда 1 чтобы перепроверить себя.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">LangGraph: <code>analyze_round</code> просит MiniMax M3 сделать короткое резюме (1 вызов LLM). Затем берёт следующие 3 вопроса из шаблона — без LLM.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">9</div>
+        <div class="step-body">
+          <h3 class="step-title">Проходит раунды 2 и 3 так же</h3>
+          <span class="step-where">всего 5–7 минут на 10 вопросов</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/session</div>
+              <div class="mock-body">
+                <div class="mock-progress">
+                  <span>Раунд 3 из 3</span>
+                  <div class="dots"><span class="done"></span><span class="done"></span><span class="active"></span></div>
+                </div>
+                <div class="mock-headline">Условия и пожелания</div>
+                <div class="mock-text" style="font-size: 0.72rem;">Резюме раундов 1 и 2 ▾</div>
+                <div class="mock-text"><strong style="color: var(--ink);">В8.</strong> Часы в неделю?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В9.</strong> Бюджет?</div>
+                <div class="mock-text" style="opacity: 0.5;"><strong style="color: var(--muted);">В10.</strong> Пожелания (пол преподавателя, время)?</div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Записывает, проверяет, подтверждает — те же 3 шага в каждом из 10 вопросов.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">После сабмита раунда 3 LangGraph идёт другим путём: вместо новых вопросов вызывает <code>generate_checklist</code> — большой prompt со всеми 10 ответами и 2 резюме, на выходе ChecklistItem[].</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step key">
+        <div class="step-num">10</div>
+        <div class="step-body">
+          <h3 class="step-title">Получает чеклист клиента и скачивает <code>.md</code></h3>
+          <span class="step-where">/results/{session_id}</span>
+          <div class="step-row">
+            <div class="step-mock">
+              <div class="mock-browser">talkarabic.app/results/abc123</div>
+              <div class="mock-body">
+                <div style="background: oklch(from var(--success) l c h / 0.12); color: var(--success); padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; align-self: flex-start;">✓ Чеклист готов</div>
+                <div class="mock-headline">Чеклист клиента — Анна</div>
+                <div class="mock-cat">Контакт и источник</div>
+                <div class="mock-checklist">
+                  <div class="mock-check"><span class="icon ok">✓</span>Имя: Анна, Алматы, GMT+5</div>
+                  <div class="mock-check"><span class="icon ok">✓</span>Источник: Instagram-реклама</div>
+                  <div class="mock-check"><span class="icon miss">○</span>Контакты в Telegram — дозапросить</div>
+                </div>
+                <div class="mock-cat">Бюджет и условия</div>
+                <div class="mock-checklist">
+                  <div class="mock-check"><span class="icon warn">!</span>Бюджет — уточнить пакет</div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.4rem;">
+                  <div class="mock-btn ghost">⧉ Копировать</div>
+                  <div class="mock-btn">⤓ Скачать .md</div>
+                </div>
+              </div>
+            </div>
+            <div class="step-meta">
+              <div class="meta-card user">
+                <span class="meta-label">Что делает</span>
+                <span class="meta-text">Видит чеклист по 6 категориям, включая «Следующие шаги для менеджера» (что дозапросить, когда назначить пробный урок). Скачивает <code>.md</code>, кидает в командный чат или прикрепляет в CRM-карточку клиента.</span>
+              </div>
+              <div class="meta-card system">
+                <span class="meta-label">Что происходит за кулисами</span>
+                <span class="meta-text">Backend отдаёт <code>checklist-{id}.md</code> с <code>Content-Disposition: attachment</code>. Файл прикладывается в Telegram / Notion / Bitrix24 как есть.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section id="questions">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>Шаблон из 10 вопросов</h2>
+    </div>
+    <p class="section-lead">
+      Фиксированный список — менеджер всегда задаёт одно и то же. LLM не выдумывает
+      новые вопросы, потому что для квалификации клиента в продажах школы важна
+      повторяемость данных от сессии к сессии. Раунды только разбивают шаблон на
+      три удобных «кадра».
+    </p>
+    <div class="grid">
+      <div class="card">
+        <span class="meta">Раунд 1 · знакомство и мотивация</span>
+        <h3>Базовая квалификация</h3>
+        <ul style="margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: 0.85rem; line-height: 1.55;">
+          <li>Имя и где находится (страна, часовой пояс)</li>
+          <li>Откуда узнал о школе (источник лида)</li>
+          <li>Зачем учит арабский (мотивация)</li>
+          <li>Какой диалект — MSA / египетский / левантийский / магрибский / коранический</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="meta">Раунд 2 · опыт и формат</span>
+        <h3>Подбор программы</h3>
+        <ul style="margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: 0.85rem; line-height: 1.55;">
+          <li>Текущий уровень владения арабским</li>
+          <li>Опыт онлайн-курсов раньше (что понравилось / не понравилось)</li>
+          <li>Готовность к Zoom-занятиям или асинхронный формат</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="meta">Раунд 3 · условия и пожелания</span>
+        <h3>Готовность купить</h3>
+        <ul style="margin: 0.5rem 0 0; padding-left: 1.25rem; color: var(--muted); font-size: 0.85rem; line-height: 1.55;">
+          <li>Часы в день / неделю на учёбу</li>
+          <li>Бюджет (помесячно или общий)</li>
+          <li>Пожелания: преподаватель м/ж, удобное время, прочее</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="arch">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2>Архитектура системы</h2>
+    </div>
+    <p class="section-lead">
+      Frontend и backend независимы. Frontend серверный (Next.js на Vercel),
+      backend — Docker с локальным Whisper. OpenRouter — единственный внешний
+      сервис в графе зависимостей.
+    </p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart TB
+  classDef browser fill:#fff,stroke:#999,color:#333,stroke-dasharray:4 3
+  classDef frontend fill:#e6f0fa,stroke:#3a7ec5,color:#2a2a2a
+  classDef backend fill:#dde9f4,stroke:#2a5b94,color:#2a2a2a
+  classDef external fill:#fae6e6,stroke:#c54a4a,color:#2a2a2a
+
+  U([Менеджер]):::browser
+
+  subgraph FE [Frontend · Vercel / Next.js 16]
+    LP[Landing]
+    SP[Session]
+    RP[Results]
+    REC[AudioRecorder<br/>MediaRecorder API]
+    LP --> SP
+    SP --> REC
+    SP --> RP
+  end
+
+  subgraph BE [Backend · FastAPI + LangGraph]
+    API[REST API<br/>/api/session/*]
+    SM[SessionManager<br/>in-memory]
+    TPL[questions_template.py<br/>10 фиксированных вопросов]
+    GR[LangGraph<br/>analyze / final]
+    WS[Whisper Small/Medium<br/>локально, ffmpeg→wav]
+    LLM[LLMService<br/>OpenRouter client]
+    API --> SM
+    SM --> TPL
+    SM --> GR
+    API --> WS
+    GR --> LLM
+  end
+
+  subgraph EXT [Внешние сервисы]
+    OR[OpenRouter API<br/>minimax/minimax-m3]
+  end
+
+  U -->|браузер, голос| FE
+  FE -->|webm audio + JSON| API
+  LLM -->|HTTPS| OR
+
+  class FE frontend
+  class BE backend
+  class EXT external
+      </pre>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2>Поток одной сессии</h2>
+    </div>
+    <p class="section-lead">
+      Один цикл — от старта до скачивания. Вопросы фиксированные, LLM используется
+      только для резюме каждого раунда и финального чеклиста.
+    </p>
+    <div class="diagram">
+      <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as Менеджер
+    participant FE as Frontend
+    participant BE as FastAPI
+    participant WS as Whisper
+    participant LG as LangGraph
+    participant LLM as MiniMax M3
+
+    U->>FE: Открывает /session
+    FE->>BE: POST /api/session/start
+    BE->>BE: questions_for_round(1) — шаблон, без LLM
+    BE-->>FE: session_id + 4 вопроса раунда 1
+
+    loop Каждый вопрос (4 в раунде 1, 3 в 2, 3 в 3)
+      U->>FE: Запись голоса (MediaRecorder webm)
+      FE->>BE: POST /transcribe (audio_file)
+      BE->>WS: ffmpeg webm→wav, pipeline()
+      WS-->>BE: текст
+      BE-->>FE: transcript
+      U->>FE: Редактирует и подтверждает
+    end
+
+    FE->>BE: POST /{id}/submit (answers)
+    BE->>LG: invoke(state)
+    LG->>LLM: analyze_round
+    LLM-->>LG: round_summary
+    alt round &lt; 3
+      LG->>LG: questions_for_round(round+1) — шаблон
+      LG-->>BE: следующие вопросы + summary
+      BE-->>FE: round+1, новые вопросы
+    else round == 3
+      LG->>LLM: generate_checklist (все 10 ответов + 2 резюме)
+      LLM-->>LG: ChecklistItem[]
+      LG->>LG: generate_markdown
+      LG-->>BE: markdown + items
+      BE-->>FE: is_complete=true
+    end
+
+    FE->>U: Переход на /results/{id}
+    U->>BE: GET /{id}/download
+    BE-->>U: checklist-{id}.md
+      </pre>
+    </div>
+  </div>
+</section>
+
+<section id="langgraph">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2>LangGraph workflow</h2>
+    </div>
+    <p class="section-lead">
+      После каждого сабмита раунда: <code>analyze_round</code> → условный edge.
+      Раунд &lt; 3 — берём следующие вопросы из шаблона (без LLM). Раунд = 3 —
+      запускаем <code>generate_checklist</code> и форматируем в Markdown.
+    </p>
+    <div class="diagram">
+      <pre class="mermaid">
+flowchart LR
+  classDef node fill:#e6f0fa,stroke:#3a7ec5,color:#2a2a2a
+  classDef cond fill:#fae6e6,stroke:#c54a4a,color:#2a2a2a
+  classDef terminal fill:#e6f4e6,stroke:#5a9a5a,color:#2a2a2a
+
+  START((START)) --> AR[analyze_round<br/>+ LLM call]:::node
+  AR --> Q{current_round &lt; 3?}:::cond
+  Q -->|да| NQ[next_questions<br/>из шаблона]:::node
+  Q -->|нет| GC[generate_checklist<br/>+ LLM call]:::node
+  NQ --> END1((END · round+1))
+  GC --> GM[generate_markdown]:::node
+  GM --> END2((END · complete)):::terminal
+      </pre>
+    </div>
+
+    <div class="grid" style="margin-top: 1.5rem;">
+      <div class="card">
+        <span class="meta">analyze_round · 1 LLM</span>
+        <h3>Резюме раунда</h3>
+        <p>2–4 предложения о том, что узнали от клиента, и что осталось неясным.</p>
+      </div>
+      <div class="card">
+        <span class="meta">next_questions · 0 LLM</span>
+        <h3>Следующие шаблонные вопросы</h3>
+        <p>Просто берёт вопросы следующего раунда из <code>questions_template.py</code>. Никаких вызовов LLM, ответ мгновенный.</p>
+      </div>
+      <div class="card">
+        <span class="meta">generate_checklist · 1 LLM</span>
+        <h3>Финальный чеклист</h3>
+        <p>Один большой prompt со всеми 10 ответами и 2 резюме. На выходе — структурированный JSON с категориями и статусами.</p>
+      </div>
+      <div class="card">
+        <span class="meta">generate_markdown · 0 LLM</span>
+        <h3>Экспорт MD</h3>
+        <p>Группирует пункты по категориям, добавляет чекбоксы и заметки. Чистый Python, без LLM.</p>
+      </div>
+    </div>
+
+    <p class="section-lead" style="margin-top: 1.5rem; font-size: 0.92rem;">
+      Итого на одного клиента — <strong>3 вызова LLM</strong>: 2 резюме (после раундов 1 и 2)
+      + 1 финальный чеклист. ~3–5 тысяч токенов на сессию, ~0.5–1 ₽ через MiniMax M3.
+    </p>
+  </div>
+</section>
+
+<section id="recorder">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2>Состояния AudioRecorder</h2>
+    </div>
+    <p class="section-lead">
+      Конечный автомат внутри одного компонента. Whisper иногда ошибается,
+      особенно на именах и арабских терминах — между записью и сабмитом
+      пользователь видит черновик и может его поправить руками.
+    </p>
+    <div class="recorder-states">
+      <div class="state-tile">
+        <span class="icon">●</span>
+        <span class="name">idle</span>
+        <span class="desc">Голубая кнопка с микрофоном. Ждёт нажатия.</span>
+      </div>
+      <div class="state-tile recording">
+        <span class="icon">■</span>
+        <span class="name">recording</span>
+        <span class="desc">Красная кнопка стоп, моно-таймер, pulse-анимация. <code>MediaRecorder</code> пишет webm/Opus.</span>
+      </div>
+      <div class="state-tile processing">
+        <span class="icon">↻</span>
+        <span class="name">processing</span>
+        <span class="desc">Spinner. Аудио уехало на <code>/transcribe</code>, ffmpeg → wav, Whisper транскрибирует.</span>
+      </div>
+      <div class="state-tile preview">
+        <span class="icon">✎</span>
+        <span class="name">preview</span>
+        <span class="desc">Textarea с черновиком. Можно править. Кнопки «Подтвердить» / «Перезаписать».</span>
+      </div>
+      <div class="state-tile submitted">
+        <span class="icon">✓</span>
+        <span class="name">submitted</span>
+        <span class="desc">Зелёная галочка, текст ответа свёрнут в превью. Кнопка «Изменить» возвращает в idle.</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2>REST API</h2>
+    </div>
+    <p class="section-lead">
+      Шесть эндпоинтов. Сессии хранятся в памяти процесса; для production
+      менять SessionManager на Redis или SQLite — интерфейс изолирован.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>Метод и путь</th>
+          <th>Что делает</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="method"><span class="verb verb-post">POST</span>/api/session/start</td>
+          <td>Создаёт сессию, отдаёт первые 4 вопроса из шаблона (Раунд 1).</td>
+        </tr>
+        <tr>
+          <td class="method"><span class="verb verb-post">POST</span>/api/session/transcribe</td>
+          <td>Принимает один webm-файл, прогоняет через ffmpeg+Whisper, возвращает текст для preview.</td>
+        </tr>
+        <tr>
+          <td class="method"><span class="verb verb-post">POST</span>/api/session/{id}/submit</td>
+          <td>JSON с подтверждёнными транскриптами раунда. Запускает LangGraph. Возвращает либо следующие 3 вопроса, либо <code>is_complete=true</code> + markdown.</td>
+        </tr>
+        <tr>
+          <td class="method"><span class="verb verb-get">GET</span>/api/session/{id}/results</td>
+          <td>Финальный <code>ChecklistItem[]</code> + полный markdown. 409 если сессия не закрыта.</td>
+        </tr>
+        <tr>
+          <td class="method"><span class="verb verb-get">GET</span>/api/session/{id}/download</td>
+          <td>Отдаёт <code>checklist-{id}.md</code> с <code>Content-Disposition: attachment</code>.</td>
+        </tr>
+        <tr>
+          <td class="method"><span class="verb verb-get">GET</span>/health</td>
+          <td>Status + флаг <code>whisper_loaded</code> — для healthcheck.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">07</span>
+      <h2>Технологический стек</h2>
+    </div>
+    <ul class="clean">
+      <li><span class="label">Frontend</span><span class="value">Next.js 16, React 19, TypeScript, Tailwind 4 (OKLCH tokens), lucide-react, Inter + JetBrains Mono</span></li>
+      <li><span class="label">Backend</span><span class="value">Python 3.11–3.13, FastAPI, Uvicorn, LangGraph 0.2, Pydantic 2</span></li>
+      <li><span class="label">LLM</span><span class="value"><code>minimax/minimax-m3</code> через OpenRouter (OpenAI SDK 1.59 + base_url)</span></li>
+      <li><span class="label">Speech-to-text</span><span class="value">Whisper Small/Medium локально, через <code>transformers pipeline</code>, ffmpeg для webm→wav 16 kHz</span></li>
+      <li><span class="label">Audio (browser)</span><span class="value">Native MediaRecorder API, webm/Opus</span></li>
+      <li><span class="label">Хранение сессий</span><span class="value">In-memory dict с <code>asyncio.Lock</code>. На прод — Redis / SQLite</span></li>
+      <li><span class="label">UI токены</span><span class="value">OKLCH only. Brand-голубой <code>oklch(0.56 0.15 245)</code>, accent-красный <code>oklch(0.56 0.20 25)</code></span></li>
+      <li><span class="label">Дизайн-система</span><span class="value">impeccable skill, PRODUCT.md + DESIGN.md в репозитории</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="deploy">
+  <div class="container">
+    <div class="section-head">
+      <span class="section-num">08</span>
+      <h2>Варианты деплоя</h2>
+    </div>
+    <p class="section-lead">
+      Backend ~3 ГБ образ с torch+transformers+Whisper. Frontend — обычный Next.js
+      (Vercel). Выбор хостинга backend — по цене и удобству.
+    </p>
+    <div class="deploy-grid">
+      <div class="deploy-card">
+        <span class="badge">для MVP</span>
+        <h3 style="margin:0;">Hugging Face Spaces</h3>
+        <span class="price">$0 · CPU basic</span>
+        <span class="pros">Бесплатно, нативный Docker, секреты из коробки</span>
+        <span class="cons">Засыпает после неактивности, медленный cold start</span>
+      </div>
+      <div class="deploy-card recommend">
+        <span class="badge">рекомендую</span>
+        <h3 style="margin:0;">Railway</h3>
+        <span class="price">$5+/мес</span>
+        <span class="pros">Простой git-push deploy, persistent volumes, не засыпает</span>
+        <span class="cons">Платный сразу, дороже на росте</span>
+      </div>
+      <div class="deploy-card">
+        <span class="badge">мощно и дёшево</span>
+        <h3 style="margin:0;">Hetzner CX22 + Coolify</h3>
+        <span class="price">€4.5/мес</span>
+        <span class="pros">2 vCPU / 4 GB RAM, фикс-цена, Coolify даёт Railway-подобный UI</span>
+        <span class="cons">Сам админишь Linux, бэкапы и SSL</span>
+      </div>
+      <div class="deploy-card">
+        <h3 style="margin:0;">Frontend → Vercel</h3>
+        <span class="price">$0 · Hobby</span>
+        <span class="pros">Native Next.js, авто-CI, edge-доставка</span>
+        <span class="cons">Backend здесь не разместить — Whisper не пройдёт по лимитам</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <span>talkarabic / Чеклист клиента — Школа арабского</span>
+    <span class="mono">architecture-preview.html · v0.2</span>
+  </div>
+</footer>
+
+<script>
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: prefersDark ? 'dark' : 'neutral',
+    securityLevel: 'loose',
+    fontFamily: '"Inter", -apple-system, sans-serif',
+    flowchart: { curve: 'basis', useMaxWidth: true },
+    sequence: { useMaxWidth: true, mirrorActors: false },
+  });
+</script>
+</body>
+</html>

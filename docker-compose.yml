@@ -1,0 +1,52 @@
+# docker-compose для локальной проверки полного стека и для Coolify.
+# Coolify умеет читать этот файл напрямую — выбирай "Docker Compose" при создании проекта.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        # Для арабского/русского лучше medium, но он +1 ГБ и +5 мин на первый build.
+        WHISPER_MODEL: openai/whisper-small
+    container_name: talkarabic-backend
+    restart: unless-stopped
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-minimax/minimax-m3}
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      OPENROUTER_APP_NAME: talkarabic-voice
+      OPENROUTER_APP_URL: ${FRONTEND_PUBLIC_URL:-http://localhost:3000}
+      WHISPER_MODEL: openai/whisper-small
+      WHISPER_LANGUAGE: ru
+      WHISPER_DEVICE: cpu
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+      MAX_AUDIO_DURATION_SECONDS: 120
+      ALLOWED_ORIGINS: ${FRONTEND_PUBLIC_URL:-http://localhost:3000}
+      PORT: 7860
+    expose:
+      - "7860"
+    # Внутренний healthcheck в Dockerfile + Coolify собирает статус.
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_USE_MOCK: "false"
+        NEXT_PUBLIC_API_URL: ${BACKEND_PUBLIC_URL:-http://localhost:7860}
+    container_name: talkarabic-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    expose:
+      - "3000"
+
+# Заметка для Coolify:
+# - Coolify сам подставляет домены и SSL поверх expose-портов
+# - BACKEND_PUBLIC_URL и FRONTEND_PUBLIC_URL задавай в переменных окружения проекта в Coolify UI
+# - OPENROUTER_API_KEY — обязательно в Secrets, не в plain env

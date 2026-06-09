@@ -35,7 +35,16 @@
       "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path\")",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(ls /d/hf-talkarabic-backend 2>&1 | head -10; echo \"---\"; ls /d/ 2>&1 | grep -i hf)",
+      "Bash(git --version)",
+      "Bash(gh repo *)",
+      "Bash(ls \"C:\\\\Users\\\\Ksenia\" 2>&1 | head -40)",
+      "WebFetch(domain:github.com)",
+      "Bash(git clone *)",
+      "Bash(ls \"D:/claude-code-starter\")",
+      "Bash(ls \"D:/claude-code-starter/prompts\" \"D:/claude-code-starter/.business\" \"D:/claude-code-starter/templates\" 2>&1)",
+      "Bash(mkdir -p \"D:/ai-context-starter/context\" \"D:/ai-context-starter/prompts\" \"D:/ai-context-starter/templates\" \"D:/ai-context-starter/examples\" && echo OK)"
     ]
   }
 }

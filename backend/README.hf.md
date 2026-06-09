@@ -6,7 +6,7 @@ colorTo: red
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Чеклист клиента школы арабского — backend (Whisper + MiniMax M3)
+short_description: Backend для голосового чеклиста школы арабского
 ---
 
 # Talkarabic Backend

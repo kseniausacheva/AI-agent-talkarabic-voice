@@ -44,7 +44,8 @@
       "Bash(git clone *)",
       "Bash(ls \"D:/claude-code-starter\")",
       "Bash(ls \"D:/claude-code-starter/prompts\" \"D:/claude-code-starter/.business\" \"D:/claude-code-starter/templates\" 2>&1)",
-      "Bash(mkdir -p \"D:/ai-context-starter/context\" \"D:/ai-context-starter/prompts\" \"D:/ai-context-starter/templates\" \"D:/ai-context-starter/examples\" && echo OK)"
+      "Bash(mkdir -p \"D:/ai-context-starter/context\" \"D:/ai-context-starter/prompts\" \"D:/ai-context-starter/templates\" \"D:/ai-context-starter/examples\" && echo OK)",
+      "Bash(python -c ' *)"
     ]
   }
 }

@@ -7,6 +7,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "schema-docs",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-l", "4173", "D:\\arablearn\\docs"],
+      "port": 4173
+    },
+    {
+      "name": "arablearn-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "D:\\arablearn\\web", "run", "dev", "--", "-p", "3001"],
+      "port": 3001
     }
   ]
 }

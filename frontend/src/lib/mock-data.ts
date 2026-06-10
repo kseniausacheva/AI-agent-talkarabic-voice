@@ -1,7 +1,11 @@
 import type {
   ChecklistItem,
+  ChecklistListItem,
+  ChecklistsResponse,
+  Manager,
   Question,
   SessionStartResponse,
+  StatsResponse,
   SubmitRoundResponse,
   ResultsResponse,
 } from "./types";
@@ -135,11 +139,98 @@ export const MOCK_TRANSCRIPTS: Record<string, string> = {
 
 export const MOCK_DEMO_SESSION_ID = "demo-abc123";
 
-export function mockStart(): SessionStartResponse {
+/** Фиктивный менеджер для mock-режима — работает без логина (спека §5). */
+export const MOCK_MANAGER: Manager = {
+  id: 1,
+  username: "demo",
+  display_name: "Демо-менеджер",
+  role: "admin",
+};
+
+export const MOCK_TOKEN = "mock-token-demo";
+
+function daysAgoISO(n: number): string {
+  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+}
+
+export const MOCK_CHECKLISTS: ChecklistListItem[] = [
+  {
+    id: MOCK_DEMO_SESSION_ID,
+    client_name: "Анна",
+    client_date: daysAgoISO(1),
+    status: "completed",
+    created_at: `${daysAgoISO(1)}T10:12:00Z`,
+    completed_at: `${daysAgoISO(1)}T10:21:00Z`,
+    manager_name: "Демо-менеджер",
+  },
+  {
+    id: "demo-omar456",
+    client_name: "Омар",
+    client_date: daysAgoISO(3),
+    status: "completed",
+    created_at: `${daysAgoISO(3)}T14:40:00Z`,
+    completed_at: `${daysAgoISO(3)}T14:49:00Z`,
+    manager_name: "Ксения",
+  },
+  {
+    id: "demo-fatima789",
+    client_name: "Фатима",
+    client_date: daysAgoISO(0),
+    status: "in_progress",
+    created_at: `${daysAgoISO(0)}T09:05:00Z`,
+    completed_at: null,
+    manager_name: "Демо-менеджер",
+  },
+];
+
+export function mockChecklists(
+  q: string,
+  page: number,
+  perPage = 20,
+): ChecklistsResponse {
+  const query = q.trim().toLowerCase();
+  const filtered = query
+    ? MOCK_CHECKLISTS.filter((c) =>
+        c.client_name.toLowerCase().includes(query),
+      )
+    : MOCK_CHECKLISTS;
+  const start = (page - 1) * perPage;
+  return {
+    items: filtered.slice(start, start + perPage),
+    total: filtered.length,
+    page,
+    per_page: perPage,
+  };
+}
+
+const MOCK_BY_DAY_COUNTS = [1, 0, 2, 3, 1, 0, 2, 1, 4, 2, 0, 3, 1, 2];
+
+export function mockStats(): StatsResponse {
+  return {
+    total_completed: 24,
+    completed_this_week: 6,
+    in_progress: 2,
+    by_manager: [
+      { display_name: "Демо-менеджер", week: 4, total: 15 },
+      { display_name: "Ксения", week: 2, total: 9 },
+    ],
+    by_day: MOCK_BY_DAY_COUNTS.map((count, i) => ({
+      date: daysAgoISO(13 - i),
+      count,
+    })),
+  };
+}
+
+export function mockStart(
+  clientName: string,
+  clientDate: string,
+): SessionStartResponse {
   return {
     session_id: MOCK_DEMO_SESSION_ID,
     round: 1,
     questions: MOCK_QUESTIONS_R1,
+    client_name: clientName,
+    client_date: clientDate,
   };
 }
 

@@ -30,6 +30,27 @@ class Settings(BaseSettings):
     max_audio_duration_seconds: int = Field(default=120)
     log_level: str = Field(default="INFO")
 
+    # Auth (Спринт 2)
+    auth_secret: str = Field(
+        default="dev-secret-change-me",
+        description="Секрет для подписи JWT. ОБЯЗАТЕЛЬНО переопределить в проде.",
+    )
+    invite_code: str = Field(
+        default="", description="Инвайт-код для регистрации менеджера (пусто = выключено)"
+    )
+    admin_invite_code: str = Field(
+        default="", description="Инвайт-код для регистрации админа (пусто = выключено)"
+    )
+
+    # База данных (SQLite)
+    database_path: str = Field(default="data/app.db")
+
+    # Google Sheets (вебхук Apps Script)
+    gsheets_webhook_url: str = Field(
+        default="", description="URL вебхука Apps Script (пусто = интеграция выключена)"
+    )
+    gsheets_secret: str = Field(default="")
+
     # CORS
     allowed_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000"

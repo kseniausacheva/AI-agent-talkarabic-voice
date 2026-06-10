@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, ListChecks, Mic, FileDown } from "lucide-react";
+import { AppHeader } from "@/components/AppHeader";
+import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 
 export default function LandingPage() {
   return (
-    <>
+    <AuthGuard>
       <MockBanner />
+      <AppHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-5xl px-6 py-20 sm:py-28">
           <div className="max-w-2xl">
@@ -30,6 +33,12 @@ export default function LandingPage() {
               >
                 Новый клиент — начать
                 <ArrowRight size={18} />
+              </Link>
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2 h-14 px-7 rounded-full border border-line-strong bg-surface text-ink font-medium hover:bg-surface-elev transition-colors"
+              >
+                Мои чеклисты
               </Link>
               <span className="text-sm text-muted">
                 10 вопросов · 3 раунда · ~7 минут
@@ -69,12 +78,12 @@ export default function LandingPage() {
               </Link>
             </p>
             <p className="text-xs text-subtle font-mono tabular-nums">
-              talkarabic-internal / v0.1
+              talkarabic-internal / v0.2
             </p>
           </div>
         </div>
       </main>
-    </>
+    </AuthGuard>
   );
 }
 

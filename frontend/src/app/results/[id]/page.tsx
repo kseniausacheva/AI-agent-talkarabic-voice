@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { use } from "react";
 import { Check, Copy, Download, Loader2, RotateCcw } from "lucide-react";
+import { AppHeader } from "@/components/AppHeader";
+import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { ChecklistPreview } from "@/components/ChecklistPreview";
-import { apiDownloadUrl, apiGetResults, isMock } from "@/lib/mock-api";
+import { apiDownloadChecklist, apiGetResults } from "@/lib/api";
 import type { ChecklistItem } from "@/lib/types";
 
 export default function ResultsPage({
@@ -54,25 +56,26 @@ export default function ResultsPage({
     setTimeout(() => setCopied(false), 1800);
   }
 
-  function downloadMarkdown() {
-    if (isMock()) {
-      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  async function downloadMarkdown() {
+    try {
+      const { blob, filename } = await apiDownloadChecklist(id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `checklist-${id}.md`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } else {
-      window.location.href = apiDownloadUrl(id);
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
   return (
-    <>
+    <AuthGuard>
       <MockBanner />
+      <AppHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
           <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
@@ -195,7 +198,7 @@ export default function ResultsPage({
           )}
         </div>
       </main>
-    </>
+    </AuthGuard>
   );
 }
 

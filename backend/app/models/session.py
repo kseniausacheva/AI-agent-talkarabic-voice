@@ -7,9 +7,12 @@ from .question import Answer, Question
 
 
 class SessionState(BaseModel):
-    """In-memory представление сессии. Используется для хранения в `sessions` dict."""
+    """Представление сессии-чеклиста, восстановленное из строки БД (таблица checklists)."""
 
     session_id: str
+    manager_id: int = 0
+    client_name: str = ""
+    client_date: str = ""
     current_round: int = 1
     max_rounds: int = 3
     current_questions: List[Question] = []
@@ -24,6 +27,8 @@ class StartSessionResponse(BaseModel):
     session_id: str
     round: int
     questions: List[Question]
+    client_name: str
+    client_date: str
 
 
 class TranscribeResponse(BaseModel):
@@ -36,9 +41,12 @@ class SubmitRoundResponse(BaseModel):
     questions: List[Question] = []
     round_summary: Optional[str] = None
     checklist_preview: Optional[str] = None
+    client_name: str = ""
 
 
 class ResultsResponse(BaseModel):
     session_id: str
     checklist: List[ChecklistItem]
     markdown: str
+    client_name: str = ""
+    client_date: str = ""

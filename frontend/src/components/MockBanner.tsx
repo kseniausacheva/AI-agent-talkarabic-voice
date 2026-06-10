@@ -1,5 +1,5 @@
 import { FlaskConical } from "lucide-react";
-import { isMock } from "@/lib/mock-api";
+import { isMock } from "@/lib/api";
 
 export function MockBanner() {
   if (!isMock()) return null;

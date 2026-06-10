@@ -1,69 +1,158 @@
-"""In-memory менеджер сессий для шаблона Школы арабского.
+"""Менеджер сессий чеклиста Школы арабского: состояние живёт в БД (таблица checklists).
 
-Стартовые вопросы — фиксированные (questions_template.py), без вызова LLM.
-LangGraph срабатывает только на submit: анализ раунда → следующий шаблонный
-раунд или финальный чеклист.
+In-memory dict убран (Спринт 2): SessionManager читает/пишет строки checklists
+по session_id. current_round выводится из числа сохранённых резюме раундов,
+current_questions — из фиксированного шаблона (questions_template.py).
+
+Стартовые вопросы — фиксированные, без вызова LLM. LangGraph срабатывает
+только на submit: анализ раунда → следующий шаблонный раунд или финальный чеклист.
 """
 import asyncio
+import json
 import logging
 import uuid
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 
-from app.agent.graph import get_compiled_graph
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agent.questions_template import questions_for_round
 from app.agent.state import AgentState
+from app.db import Checklist, Manager
+from app.models.checklist import ChecklistItem
 from app.models.question import Answer
 from app.models.session import SessionState
 
 logger = logging.getLogger(__name__)
+
+MAX_ROUNDS = 3
 
 
 class SessionNotFoundError(KeyError):
     pass
 
 
+class SessionAccessError(PermissionError):
+    """Менеджер не владеет сессией и не является admin."""
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _row_to_state(row: Checklist) -> SessionState:
+    """Восстанавливает SessionState из строки таблицы checklists."""
+    answers = [Answer(**a) for a in json.loads(row.answers_json or "[]")]
+    summaries: List[str] = json.loads(row.summaries_json or "[]")
+    checklist_items = (
+        [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
+        if row.checklist_json
+        else []
+    )
+    is_complete = row.status == "completed"
+    current_round = min(len(summaries) + 1, MAX_ROUNDS)
+    return SessionState(
+        session_id=row.id,
+        manager_id=row.manager_id,
+        client_name=row.client_name,
+        client_date=row.client_date,
+        current_round=current_round,
+        max_rounds=MAX_ROUNDS,
+        current_questions=[] if is_complete else list(questions_for_round(current_round)),
+        all_answers=answers,
+        round_summaries=summaries,
+        checklist_items=checklist_items,
+        markdown_content=row.markdown,
+        is_complete=is_complete,
+    )
+
+
 class SessionManager:
+    """Stateless-обёртка над таблицей checklists (плюс per-session lock на submit)."""
+
     def __init__(self) -> None:
-        self._sessions: Dict[str, SessionState] = {}
-        self._lock = asyncio.Lock()
+        self._locks: Dict[str, asyncio.Lock] = {}
 
-    async def start_session(self) -> SessionState:
-        session_id = uuid.uuid4().hex[:12]
-        questions = questions_for_round(1)
-        state = SessionState(
-            session_id=session_id,
-            current_round=1,
-            current_questions=list(questions),
-        )
-        async with self._lock:
-            self._sessions[session_id] = state
-        logger.info(
-            "Started session %s with %d template questions (round 1)",
-            session_id,
-            len(questions),
-        )
-        return state
+    def _lock_for(self, session_id: str) -> asyncio.Lock:
+        return self._locks.setdefault(session_id, asyncio.Lock())
 
-    def _get_or_raise(self, session_id: str) -> SessionState:
-        if session_id not in self._sessions:
+    @staticmethod
+    def _check_access(row: Checklist, manager: Manager) -> None:
+        """Доступ: владелец сессии или admin, иначе SessionAccessError (→ 403)."""
+        if manager.role != "admin" and row.manager_id != manager.id:
+            raise SessionAccessError(row.id)
+
+    @staticmethod
+    async def _load_row(db: AsyncSession, session_id: str) -> Checklist:
+        row = await db.get(Checklist, session_id)
+        if row is None:
             raise SessionNotFoundError(session_id)
-        return self._sessions[session_id]
+        return row
+
+    async def start_session(
+        self,
+        db: AsyncSession,
+        manager_id: int,
+        client_name: str,
+        client_date: str,
+    ) -> SessionState:
+        """Создаёт чеклист в БД и возвращает состояние с вопросами раунда 1."""
+        session_id = uuid.uuid4().hex[:12]
+        row = Checklist(
+            id=session_id,
+            manager_id=manager_id,
+            client_name=client_name,
+            client_date=client_date,
+            status="in_progress",
+            created_at=_utc_now_iso(),
+            answers_json="[]",
+            summaries_json="[]",
+        )
+        db.add(row)
+        await db.commit()
+        logger.info(
+            "Started session %s for client '%s' (manager_id=%d)",
+            session_id,
+            client_name,
+            manager_id,
+        )
+        return _row_to_state(row)
+
+    async def get_session(
+        self, db: AsyncSession, session_id: str, manager: Manager
+    ) -> SessionState:
+        row = await self._load_row(db, session_id)
+        self._check_access(row, manager)
+        return _row_to_state(row)
 
     async def submit_round(
         self,
+        db: AsyncSession,
         session_id: str,
-        answers_texts: List[Dict[str, str]],
-    ) -> SessionState:
-        async with self._lock:
-            state = self._get_or_raise(session_id)
+        answers_texts: List[Dict],
+        manager: Manager,
+    ) -> Tuple[SessionState, bool]:
+        """Принимает ответы раунда, гоняет граф, сохраняет результат в БД.
+
+        skipped=true ⇒ transcript игнорируется, audio_transcript = "" —
+        пометка для LLM формируется в llm.py.
+
+        Возвращает (state, just_completed): just_completed=True только если
+        чеклист завершился именно этим вызовом (для fire-and-forget GSheets).
+        """
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+            state = _row_to_state(row)
             if state.is_complete:
-                return state
+                return state, False
 
             question_index = {q.id: q for q in state.current_questions}
             new_answers: List[Answer] = []
             for entry in answers_texts:
                 qid = entry.get("question_id")
-                transcript = (entry.get("transcript") or "").strip()
+                skipped = bool(entry.get("skipped", False))
+                transcript = "" if skipped else (entry.get("transcript") or "").strip()
                 question = question_index.get(qid)
                 if question is None:
                     logger.warning("Unknown question_id %s in submit", qid)
@@ -74,6 +163,7 @@ class SessionManager:
                         question_text=question.text,
                         audio_transcript=transcript,
                         round_number=question.round_number,
+                        skipped=skipped,
                     )
                 )
 
@@ -90,25 +180,42 @@ class SessionManager:
                 "is_complete": state.is_complete,
             }
 
-        graph = get_compiled_graph()
-        result_state = await asyncio.to_thread(graph.invoke, agent_state)
+            # Ленивый импорт: langgraph/openai не нужны для старта приложения
+            from app.agent.graph import get_compiled_graph
 
-        async with self._lock:
-            state = self._get_or_raise(session_id)
-            state.round_summaries = list(result_state.get("round_summaries", []))
-            state.is_complete = bool(result_state.get("is_complete", False))
-            if state.is_complete:
-                state.checklist_items = list(result_state.get("checklist_items", []))
-                state.markdown_content = result_state.get("markdown_content")
+            graph = get_compiled_graph()
+            result_state = await asyncio.to_thread(graph.invoke, agent_state)
+
+            summaries = list(result_state.get("round_summaries", []))
+            is_complete = bool(result_state.get("is_complete", False))
+
+            row.answers_json = json.dumps(
+                [a.model_dump() for a in state.all_answers], ensure_ascii=False
+            )
+            row.summaries_json = json.dumps(summaries, ensure_ascii=False)
+            state.round_summaries = summaries
+            state.is_complete = is_complete
+
+            if is_complete:
+                items = list(result_state.get("checklist_items", []))
+                markdown = result_state.get("markdown_content")
+                row.checklist_json = json.dumps(
+                    [i.model_dump() for i in items], ensure_ascii=False
+                )
+                row.markdown = markdown
+                row.status = "completed"
+                row.completed_at = _utc_now_iso()
+                state.checklist_items = items
+                state.markdown_content = markdown
+                state.current_questions = []
             else:
                 state.current_round = result_state["current_round"]
                 state.current_questions = list(
                     result_state.get("current_questions", [])
                 )
-            return state
 
-    def get_session(self, session_id: str) -> SessionState:
-        return self._get_or_raise(session_id)
+            await db.commit()
+            return state, is_complete
 
 
 _instance: Optional[SessionManager] = None

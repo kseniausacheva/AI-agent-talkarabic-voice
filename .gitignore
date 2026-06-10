@@ -49,3 +49,7 @@ logs/
 # Whisper / HF cache (если будет локально)
 .cache/
 .huggingface/
+
+# SQLite база (Спринт 2)
+backend/data/
+*.db

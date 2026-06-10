@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleSlash, RotateCcw } from "lucide-react";
 import { AudioRecorder } from "./AudioRecorder";
 import type { Question } from "@/lib/types";
 
@@ -8,7 +9,10 @@ type Props = {
   index: number;
   totalInRound: number;
   answered: boolean;
+  skipped: boolean;
   onAnswer: (transcript: string) => void;
+  onSkip: () => void;
+  onUnskip: () => void;
 };
 
 export function QuestionCard({
@@ -16,7 +20,10 @@ export function QuestionCard({
   index,
   totalInRound,
   answered,
+  skipped,
   onAnswer,
+  onSkip,
+  onUnskip,
 }: Props) {
   return (
     <article
@@ -31,11 +38,40 @@ export function QuestionCard({
           {question.text}
         </h3>
       </header>
-      <AudioRecorder
-        questionId={question.id}
-        onConfirm={onAnswer}
-        disabled={answered}
-      />
+
+      {skipped ? (
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-2 h-9 px-3.5 rounded-full bg-surface-elev text-muted text-sm">
+            <CircleSlash size={14} className="text-subtle" />
+            Пропущено
+          </span>
+          <button
+            type="button"
+            onClick={onUnskip}
+            className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink transition-colors"
+          >
+            <RotateCcw size={13} />
+            Вернуть
+          </button>
+        </div>
+      ) : (
+        <>
+          <AudioRecorder
+            questionId={question.id}
+            onConfirm={onAnswer}
+            disabled={answered}
+          />
+          {!answered && (
+            <button
+              type="button"
+              onClick={onSkip}
+              className="mt-4 text-xs text-muted hover:text-ink underline underline-offset-4 decoration-line-strong transition-colors"
+            >
+              Пропустить — нет данных
+            </button>
+          )}
+        </>
+      )}
     </article>
   );
 }

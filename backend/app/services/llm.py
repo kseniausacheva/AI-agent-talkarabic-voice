@@ -32,6 +32,16 @@ class LLMError(RuntimeError):
     pass
 
 
+SKIPPED_ANSWER_MARK = "менеджер пропустил вопрос — данных нет"
+
+
+def _answer_text(answer: Answer) -> str:
+    """Текст ответа для промпта: пропущенные вопросы помечаются явно."""
+    if answer.skipped:
+        return f"({SKIPPED_ANSWER_MARK})"
+    return answer.audio_transcript or "(пустой ответ)"
+
+
 def _strip_markdown_json(raw: str) -> str:
     raw = raw.strip()
     match = re.search(r"```(?:json)?\s*(.+?)\s*```", raw, re.DOTALL)
@@ -90,7 +100,7 @@ class LLMService:
         ]
         for i, a in enumerate(round_answers, start=1):
             user_payload_lines.append(f"\nВ{i}: {a.question_text}")
-            user_payload_lines.append(f"О{i}: {a.audio_transcript or '(пустой ответ)'}")
+            user_payload_lines.append(f"О{i}: {_answer_text(a)}")
         data = self._chat_json(
             system=prompts.SYSTEM_ANALYZE_ROUND,
             user="\n".join(user_payload_lines),
@@ -133,7 +143,7 @@ class LLMService:
         lines.append("Все вопросы шаблона и ответы менеджера:")
         for a in answers:
             lines.append(f"\n[Раунд {a.round_number}] В: {a.question_text}")
-            lines.append(f"О: {a.audio_transcript or '(пустой ответ)'}")
+            lines.append(f"О: {_answer_text(a)}")
         return "\n".join(lines)
 
 

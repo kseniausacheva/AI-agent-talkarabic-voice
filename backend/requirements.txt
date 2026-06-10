@@ -19,6 +19,12 @@ librosa==0.10.2
 soundfile==0.12.1
 accelerate==1.1.0
 
+# Auth & DB (Спринт 2)
+PyJWT==2.10.1
+SQLAlchemy==2.0.36
+aiosqlite==0.20.0
+greenlet>=3.1
+
 # Utilities
 pydantic==2.9.2
 pydantic-settings==2.6.1

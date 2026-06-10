@@ -6,7 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import health, session
+from app.db import init_db
+from app.routers import auth, checklists, health, session
 from app.services.transcription import get_transcription_service
 
 
@@ -22,6 +23,12 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     _configure_logging(settings.log_level)
     logger = logging.getLogger(__name__)
+    if settings.auth_secret == "dev-secret-change-me":
+        logger.warning(
+            "AUTH_SECRET не задан — используется dev-секрет. "
+            "Обязательно задайте AUTH_SECRET в проде!"
+        )
+    await init_db()
     logger.info("Preloading Whisper (%s)...", settings.whisper_model)
     try:
         get_transcription_service().preload()
@@ -35,7 +42,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="AI Checklist Agent",
         description="Voice-driven checklist filler (Whisper + OpenRouter/MiniMax M3 + LangGraph)",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.add_middleware(
@@ -46,7 +53,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health.router)
+    app.include_router(auth.router)
     app.include_router(session.router)
+    app.include_router(checklists.router)
     return app
 
 

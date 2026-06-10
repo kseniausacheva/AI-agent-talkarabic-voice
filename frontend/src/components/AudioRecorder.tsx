@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Mic, RotateCcw, Square } from "lucide-react";
-import { apiTranscribe, isMock } from "@/lib/mock-api";
+import { apiTranscribe, isMock } from "@/lib/api";
 import type { RecorderState } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -12,10 +12,14 @@ type Props = {
   disabled?: boolean;
 };
 
+type InputMode = "voice" | "text";
+
 export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
+  const [mode, setMode] = useState<InputMode>("voice");
   const [state, setState] = useState<RecorderState>("idle");
   const [seconds, setSeconds] = useState(0);
   const [transcript, setTranscript] = useState("");
+  const [textValue, setTextValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -115,6 +119,7 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
   }
 
   function reset() {
+    setTextValue(transcript);
     setTranscript("");
     setState("idle");
     setSeconds(0);
@@ -123,6 +128,14 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
 
   function confirm() {
     onConfirm(transcript.trim());
+    setState("submitted");
+  }
+
+  function confirmText() {
+    const text = textValue.trim();
+    if (!text) return;
+    setTranscript(text);
+    onConfirm(text);
     setState("submitted");
   }
 
@@ -226,30 +239,103 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
     );
   }
 
-  // idle
+  // idle: переключатель Голос | Текст + соответствующий ввод
   return (
-    <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={start}
-        disabled={disabled}
-        aria-label="Начать запись ответа"
-        className={cn(
-          "self-start inline-flex items-center gap-3 h-12 pl-3 pr-5 rounded-full",
-          "bg-primary text-primary-ink hover:bg-primary-hover",
-          "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-        )}
+    <div className="flex flex-col gap-3">
+      <div
+        className="inline-flex self-start rounded-lg border border-line bg-surface-elev/60 p-0.5"
+        role="tablist"
+        aria-label="Способ ответа"
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
-          <Mic size={18} />
-        </span>
-        <span className="font-medium">Записать ответ</span>
-      </button>
+        <ModeTab
+          active={mode === "voice"}
+          onClick={() => setMode("voice")}
+          disabled={disabled}
+        >
+          Голос
+        </ModeTab>
+        <ModeTab
+          active={mode === "text"}
+          onClick={() => setMode("text")}
+          disabled={disabled}
+        >
+          Текст
+        </ModeTab>
+      </div>
+
+      {mode === "voice" ? (
+        <button
+          type="button"
+          onClick={start}
+          disabled={disabled}
+          aria-label="Начать запись ответа"
+          className={cn(
+            "self-start inline-flex items-center gap-3 h-12 pl-3 pr-5 rounded-full",
+            "bg-primary text-primary-ink hover:bg-primary-hover",
+            "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+          )}
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+            <Mic size={18} />
+          </span>
+          <span className="font-medium">Записать ответ</span>
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <textarea
+            value={textValue}
+            onChange={(e) => setTextValue(e.target.value)}
+            rows={4}
+            disabled={disabled}
+            className="w-full resize-y rounded-lg border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+            placeholder="Введите ответ текстом…"
+          />
+          <button
+            type="button"
+            onClick={confirmText}
+            disabled={disabled || !textValue.trim()}
+            className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-ink h-10 px-4 text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Check size={16} />
+            Подтвердить
+          </button>
+        </div>
+      )}
+
       {error && (
         <p className="text-sm text-danger" role="alert">
           {error}
         </p>
       )}
     </div>
+  );
+}
+
+function ModeTab({
+  active,
+  onClick,
+  disabled,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "h-7 px-3 rounded-md text-xs font-medium transition-colors",
+        active ? "bg-bg text-ink shadow-[0_1px_2px_oklch(0_0_0/0.06)]" : "text-muted hover:text-ink",
+        "disabled:opacity-50 disabled:cursor-not-allowed",
+      )}
+    >
+      {children}
+    </button>
   );
 }

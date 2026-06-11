@@ -42,6 +42,10 @@ export type ChecklistListItem = {
   created_at: string;
   completed_at: string | null;
   manager_name: string;
+  lead_score: number | null;
+  stage: LeadStage | null;
+  next_contact_date: string | null;
+  completeness: number | null;
 };
 
 export type ChecklistsResponse = {
@@ -62,12 +66,28 @@ export type DayStat = {
   count: number;
 };
 
+export type QuestionSkipStat = {
+  question_id: string;
+  label: string;
+  count: number;
+};
+
+export type StageCounts = {
+  new: number;
+  warm: number;
+  hot: number;
+  rejected: number;
+};
+
 export type StatsResponse = {
   total_completed: number;
   completed_this_week: number;
   in_progress: number;
   by_manager: ManagerStat[];
   by_day: DayStat[];
+  skips_by_question: QuestionSkipStat[];
+  avg_lead_score: number | null;
+  stage_counts: StageCounts;
 };
 
 export type ChecklistStatus = "confirmed" | "needs_clarification" | "not_discussed";
@@ -96,10 +116,37 @@ export type SubmitRoundResponse = {
   client_name?: string;
 };
 
+/* ------------------- Аналитика лида (спринт 3, спека §3) ------------------- */
+
+export type ObjectionType = "price" | "time" | "tech" | "trust" | "other";
+
+export type Objection = {
+  type: ObjectionType;
+  note: string;
+};
+
+export type LeadTask = {
+  title: string;
+  due_date: string | null;
+};
+
+export type LeadStage = "new" | "warm" | "hot" | "rejected";
+
+export type LeadInsights = {
+  lead_score: number | null;
+  score_reason: string;
+  stage: LeadStage | null;
+  objections: Objection[];
+  next_contact_date: string | null;
+  follow_up_draft: string;
+  tasks: LeadTask[];
+};
+
 export type ResultsResponse = {
   session_id: string;
   checklist: ChecklistItem[];
   markdown: string;
+  insights: LeadInsights | null;
 };
 
 export type RecorderState =

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.questions_template import questions_for_round
 from app.agent.state import AgentState
 from app.db import Checklist, Manager
-from app.models.checklist import ChecklistItem
+from app.models.checklist import ChecklistItem, LeadInsights
 from app.models.question import Answer
 from app.models.session import SessionState
 
@@ -38,6 +38,28 @@ class SessionAccessError(PermissionError):
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_insights_json(raw: Optional[str]) -> Optional[LeadInsights]:
+    """insights_json из БД → LeadInsights; None/битый JSON → None (старые записи)."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return LeadInsights.model_validate(data)
+    except Exception:
+        logger.warning("Broken insights_json in DB, ignoring")
+        return None
+
+
+def _completeness(items: List[ChecklistItem]) -> Optional[int]:
+    """0–100: % пунктов чеклиста со статусом != not_discussed."""
+    if not items:
+        return None
+    discussed = sum(1 for item in items if item.status != "not_discussed")
+    return round(100 * discussed / len(items))
 
 
 def _row_to_state(row: Checklist) -> SessionState:
@@ -62,6 +84,7 @@ def _row_to_state(row: Checklist) -> SessionState:
         all_answers=answers,
         round_summaries=summaries,
         checklist_items=checklist_items,
+        insights=_parse_insights_json(row.insights_json),
         markdown_content=row.markdown,
         is_complete=is_complete,
     )
@@ -171,6 +194,7 @@ class SessionManager:
 
             agent_state: AgentState = {
                 "session_id": state.session_id,
+                "client_date": state.client_date,
                 "current_round": state.current_round,
                 "max_rounds": state.max_rounds,
                 "current_questions": state.current_questions,
@@ -199,13 +223,20 @@ class SessionManager:
             if is_complete:
                 items = list(result_state.get("checklist_items", []))
                 markdown = result_state.get("markdown_content")
+                insights = result_state.get("insights") or LeadInsights()
+                completeness = _completeness(items)
                 row.checklist_json = json.dumps(
                     [i.model_dump() for i in items], ensure_ascii=False
                 )
                 row.markdown = markdown
+                row.insights_json = json.dumps(
+                    insights.model_dump(), ensure_ascii=False
+                )
+                row.completeness = completeness
                 row.status = "completed"
                 row.completed_at = _utc_now_iso()
                 state.checklist_items = items
+                state.insights = insights
                 state.markdown_content = markdown
                 state.current_questions = []
             else:

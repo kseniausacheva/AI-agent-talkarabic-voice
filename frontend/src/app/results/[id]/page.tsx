@@ -9,7 +9,12 @@ import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { ChecklistPreview } from "@/components/ChecklistPreview";
 import { apiDownloadChecklist, apiGetResults } from "@/lib/api";
-import type { ChecklistItem } from "@/lib/types";
+import type {
+  ChecklistItem,
+  LeadInsights,
+  LeadStage,
+  ObjectionType,
+} from "@/lib/types";
 
 export default function ResultsPage({
   params,
@@ -19,6 +24,7 @@ export default function ResultsPage({
   const { id } = use(params);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [markdown, setMarkdown] = useState<string>("");
+  const [insights, setInsights] = useState<LeadInsights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"checklist" | "markdown">("checklist");
@@ -32,6 +38,7 @@ export default function ResultsPage({
         if (cancelled) return;
         setItems(data.checklist);
         setMarkdown(data.markdown);
+        setInsights(data.insights ?? null);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -132,6 +139,8 @@ export default function ResultsPage({
                 </div>
               </div>
 
+              {insights && <LeadInsightsCard insights={insights} />}
+
               <div className="mb-8 flex items-center gap-2 border-b border-line">
                 <TabButton
                   active={tab === "checklist"}
@@ -224,6 +233,159 @@ function TabButton({
         <span className="absolute -bottom-px left-0 right-0 h-0.5 bg-primary" />
       )}
     </button>
+  );
+}
+
+/* ------------------- Аналитика лида (спринт 3, спека §5) ------------------- */
+
+const STAGE_LABELS: Record<LeadStage, string> = {
+  new: "новый",
+  warm: "тёплый",
+  hot: "горячий",
+  rejected: "отказ",
+};
+
+const STAGE_CHIP: Record<LeadStage, string> = {
+  new: "bg-surface-elev text-muted",
+  warm: "bg-primary/12 text-primary",
+  hot: "bg-success/12 text-success",
+  rejected: "bg-danger/10 text-danger",
+};
+
+const OBJECTION_LABELS: Record<ObjectionType, string> = {
+  price: "цена",
+  time: "время",
+  tech: "техника",
+  trust: "доверие",
+  other: "другое",
+};
+
+/** 1–4 — danger, 5–7 — ink, 8–10 — success. */
+function scoreColor(score: number): string {
+  if (score >= 8) return "text-success";
+  if (score >= 5) return "text-ink";
+  return "text-danger";
+}
+
+/** "2026-06-13" → "13.06.2026". */
+function formatDateRu(iso: string): string {
+  return iso.split("-").reverse().join(".");
+}
+
+function LeadInsightsCard({ insights }: { insights: LeadInsights }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyDraft() {
+    await navigator.clipboard.writeText(insights.follow_up_draft);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <section className="mb-12 rounded-xl border border-line bg-surface p-6">
+      <h2 className="text-xs font-medium uppercase tracking-wider text-muted mb-5">
+        Аналитика лида
+      </h2>
+
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-4 mb-5">
+        <div className="flex items-baseline gap-1 shrink-0">
+          <span
+            className={`text-4xl font-semibold tracking-[-0.03em] tabular-nums ${
+              insights.lead_score !== null
+                ? scoreColor(insights.lead_score)
+                : "text-subtle"
+            }`}
+          >
+            {insights.lead_score ?? "—"}
+          </span>
+          <span className="text-sm text-subtle">/10</span>
+        </div>
+        <div className="flex-1 min-w-52">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            {insights.stage && (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STAGE_CHIP[insights.stage]}`}
+              >
+                {STAGE_LABELS[insights.stage]}
+              </span>
+            )}
+            {insights.objections.map((o, i) => (
+              <span
+                key={`${o.type}-${i}`}
+                title={o.note || undefined}
+                className="inline-flex items-center rounded-full border border-line-strong px-2.5 py-0.5 text-xs text-muted"
+              >
+                {OBJECTION_LABELS[o.type]}
+              </span>
+            ))}
+          </div>
+          {insights.score_reason && (
+            <p className="text-sm text-muted text-pretty">
+              {insights.score_reason}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {insights.next_contact_date && (
+        <p className="text-sm text-muted mb-4">
+          Следующее касание:{" "}
+          <span className="font-medium text-ink tabular-nums">
+            {formatDateRu(insights.next_contact_date)}
+          </span>
+        </p>
+      )}
+
+      {insights.follow_up_draft && (
+        <div className="rounded-lg border border-line bg-bg p-4 mb-4">
+          <p className="text-sm leading-relaxed text-ink text-pretty mb-3">
+            {insights.follow_up_draft}
+          </p>
+          <button
+            type="button"
+            onClick={copyDraft}
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-line-strong text-sm text-ink hover:bg-surface transition-colors"
+          >
+            {copied ? (
+              <>
+                <Check size={14} className="text-success" />
+                Скопировано
+              </>
+            ) : (
+              <>
+                <Copy size={14} />
+                Копировать сообщение
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {insights.tasks.length > 0 && (
+        <ul className="space-y-2">
+          {insights.tasks.map((t, i) => (
+            <li
+              key={`${t.title}-${i}`}
+              className="flex items-start gap-2.5 text-sm text-ink"
+            >
+              <span
+                aria-hidden
+                className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border border-line-strong bg-bg"
+              />
+              <span>
+                {t.title}
+                {t.due_date && (
+                  <span className="text-muted tabular-nums">
+                    {" "}
+                    — до {formatDateRu(t.due_date)}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -71,6 +71,16 @@ class Checklist(Base):
     sheet_synced: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Спринт 3: аналитика лида
+    insights_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completeness: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+
+# Миграции checklists: колонка → DDL (добавляется, если PRAGMA её не видит)
+_CHECKLIST_MIGRATIONS = {
+    "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",
+    "completeness": "ALTER TABLE checklists ADD COLUMN completeness INTEGER",
+}
 
 
 _engine: Optional[AsyncEngine] = None
@@ -97,13 +107,24 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 
 async def init_db() -> None:
-    """Создаёт директорию БД и таблицы. Вызывается в lifespan FastAPI."""
+    """Создаёт директорию БД и таблицы, добивает недостающие колонки (миграция).
+
+    Миграция без потери данных: после create_all смотрим PRAGMA table_info
+    (checklists) и добавляем отсутствующие колонки через ALTER TABLE.
+    Существующие записи остаются с NULL в новых колонках.
+    """
     db_path = Path(get_settings().database_path)
     if str(db_path.parent) not in ("", "."):
         db_path.parent.mkdir(parents=True, exist_ok=True)
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        result = await conn.exec_driver_sql("PRAGMA table_info(checklists)")
+        existing_columns = {row[1] for row in result.fetchall()}
+        for column, ddl in _CHECKLIST_MIGRATIONS.items():
+            if column not in existing_columns:
+                await conn.exec_driver_sql(ddl)
+                logger.info("Migration: added column checklists.%s", column)
     logger.info("Database ready: %s", db_path)
 
 

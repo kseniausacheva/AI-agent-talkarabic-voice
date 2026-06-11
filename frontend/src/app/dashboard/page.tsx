@@ -7,16 +7,28 @@ import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { apiChecklists } from "@/lib/api";
-import type { ChecklistsResponse } from "@/lib/types";
+import type { ChecklistListItem, ChecklistsResponse } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 const PER_PAGE = 20;
+
+const STAGE_LABELS: Record<string, string> = {
+  new: "новый",
+  warm: "тёплый",
+  hot: "горячий",
+  rejected: "отказ",
+};
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ChecklistsResponse | null>(null);
+  const [dueItems, setDueItems] = useState<ChecklistListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +38,7 @@ export default function DashboardPage() {
     setError(null);
     const timer = window.setTimeout(async () => {
       try {
-        const res = await apiChecklists(q, page, PER_PAGE);
+        const res = await apiChecklists({ q, page, perPage: PER_PAGE });
         if (!cancelled) setData(res);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -40,7 +52,23 @@ export default function DashboardPage() {
     };
   }, [q, page]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiChecklists({ due: "today" });
+        if (!cancelled) setDueItems(res.items);
+      } catch {
+        // Блок «Сегодня связаться» необязателен — ошибку не показываем.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.per_page)) : 1;
+  const today = todayISO();
 
   return (
     <AuthGuard>
@@ -81,6 +109,52 @@ export default function DashboardPage() {
             </p>
           )}
 
+          {dueItems.length > 0 && (
+            <section className="mb-8 rounded-xl border border-line bg-surface p-5">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-muted mb-3">
+                Сегодня связаться
+              </h2>
+              <ul className="divide-y divide-line">
+                {dueItems.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/results/${item.id}`)}
+                      className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 py-2.5 text-left text-sm hover:bg-surface-elev rounded-md px-2 -mx-2 transition-colors"
+                    >
+                      <span className="font-medium text-ink">
+                        {item.client_name}
+                      </span>
+                      <span className="text-subtle">·</span>
+                      <span
+                        className={cn(
+                          "font-mono text-xs tabular-nums",
+                          item.next_contact_date && item.next_contact_date < today
+                            ? "text-accent"
+                            : "text-muted",
+                        )}
+                      >
+                        {item.next_contact_date ?? "—"}
+                      </span>
+                      <span className="text-subtle">·</span>
+                      <span className="tabular-nums text-ink">
+                        {item.lead_score ?? "—"}
+                      </span>
+                      {item.stage && (
+                        <>
+                          <span className="text-subtle">·</span>
+                          <span className="text-muted">
+                            {STAGE_LABELS[item.stage] ?? item.stage}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-sm">
               <thead>
@@ -88,13 +162,15 @@ export default function DashboardPage() {
                   <th className="px-4 py-3 font-medium">Дата</th>
                   <th className="px-4 py-3 font-medium">Клиент</th>
                   <th className="px-4 py-3 font-medium">Менеджер</th>
+                  <th className="px-4 py-3 font-medium">Score</th>
+                  <th className="px-4 py-3 font-medium">Связаться</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-10">
+                    <td colSpan={6} className="px-4 py-10">
                       <span className="flex items-center justify-center gap-3 text-muted">
                         <Loader2 size={16} className="animate-spin text-primary" />
                         Загружаем…
@@ -104,7 +180,7 @@ export default function DashboardPage() {
                 )}
                 {!loading && data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-10 text-center text-muted">
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted">
                       {q.trim()
                         ? "Ничего не найдено по запросу."
                         : "Чеклистов пока нет."}
@@ -135,6 +211,20 @@ export default function DashboardPage() {
                         </td>
                         <td className="px-4 py-3.5 text-muted">
                           {item.manager_name}
+                        </td>
+                        <td className="px-4 py-3.5 tabular-nums text-ink">
+                          {item.lead_score ?? "—"}
+                        </td>
+                        <td
+                          className={cn(
+                            "px-4 py-3.5 font-mono text-xs tabular-nums whitespace-nowrap",
+                            item.next_contact_date &&
+                              item.next_contact_date < today
+                              ? "text-accent"
+                              : "text-muted",
+                          )}
+                        >
+                          {item.next_contact_date ?? "—"}
                         </td>
                         <td className="px-4 py-3.5">
                           {completed ? (

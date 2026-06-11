@@ -43,11 +43,12 @@ def next_questions_node(state: AgentState) -> Dict:
 
 def generate_checklist_node(state: AgentState) -> Dict:
     llm = get_llm_service()
-    items = llm.generate_checklist(
+    items, insights = llm.generate_checklist(
         all_answers=state["all_answers"],
         round_summaries=state.get("round_summaries", []),
+        client_date=state.get("client_date", ""),
     )
-    return {"checklist_items": items}
+    return {"checklist_items": items, "insights": insights}
 
 
 def generate_markdown_node(state: AgentState) -> Dict:

@@ -2,8 +2,10 @@ import type {
   ChecklistItem,
   ChecklistListItem,
   ChecklistsResponse,
+  LeadInsights,
   Manager,
   Question,
+  QuestionSkipStat,
   SessionStartResponse,
   StatsResponse,
   SubmitRoundResponse,
@@ -153,6 +155,24 @@ function daysAgoISO(n: number): string {
   return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 }
 
+/** Аналитика лида для demo-abc123 (спека §5, mock-режим). */
+export const MOCK_INSIGHTS: LeadInsights = {
+  lead_score: 7,
+  score_reason:
+    "Ясная мотивация и готовность к Zoom, но бюджет не подтверждён.",
+  stage: "warm",
+  objections: [
+    { type: "price", note: "Сомневается, потянет ли 20 000 ₽ помесячно" },
+  ],
+  next_contact_date: daysAgoISO(0),
+  follow_up_draft:
+    "Здравствуйте, Анна! Спасибо за разговор. Отправляю программу египетского диалекта с нуля — она рассчитана на занятия в Zoom 2–3 раза в неделю по вечерам. Напомню про пробный урок в четверг в 20:00 по Алматы — подтвердите, пожалуйста, что время в силе.",
+  tasks: [
+    { title: "Отправить программу египетского с нуля", due_date: daysAgoISO(0) },
+    { title: "Подтвердить пробный урок в четверг 20:00 GMT+5", due_date: null },
+  ],
+};
+
 export const MOCK_CHECKLISTS: ChecklistListItem[] = [
   {
     id: MOCK_DEMO_SESSION_ID,
@@ -162,6 +182,11 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     created_at: `${daysAgoISO(1)}T10:12:00Z`,
     completed_at: `${daysAgoISO(1)}T10:21:00Z`,
     manager_name: "Демо-менеджер",
+    lead_score: 7,
+    stage: "warm",
+    // Сегодня — запись попадает в блок «Сегодня связаться» (спека §5).
+    next_contact_date: daysAgoISO(0),
+    completeness: 80,
   },
   {
     id: "demo-omar456",
@@ -171,6 +196,11 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     created_at: `${daysAgoISO(3)}T14:40:00Z`,
     completed_at: `${daysAgoISO(3)}T14:49:00Z`,
     manager_name: "Ксения",
+    lead_score: 9,
+    stage: "hot",
+    // Вчера — просроченная дата подсвечивается accent-цветом в таблице.
+    next_contact_date: daysAgoISO(1),
+    completeness: 90,
   },
   {
     id: "demo-fatima789",
@@ -180,6 +210,10 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     created_at: `${daysAgoISO(0)}T09:05:00Z`,
     completed_at: null,
     manager_name: "Демо-менеджер",
+    lead_score: null,
+    stage: null,
+    next_contact_date: null,
+    completeness: null,
   },
 ];
 
@@ -187,13 +221,25 @@ export function mockChecklists(
   q: string,
   page: number,
   perPage = 20,
+  due?: "today",
 ): ChecklistsResponse {
+  const today = daysAgoISO(0);
+  let source = MOCK_CHECKLISTS;
+  if (due === "today") {
+    source = MOCK_CHECKLISTS.filter(
+      (c) =>
+        c.status === "completed" &&
+        c.next_contact_date !== null &&
+        c.next_contact_date <= today &&
+        c.stage !== "rejected",
+    ).sort((a, b) =>
+      (a.next_contact_date ?? "").localeCompare(b.next_contact_date ?? ""),
+    );
+  }
   const query = q.trim().toLowerCase();
   const filtered = query
-    ? MOCK_CHECKLISTS.filter((c) =>
-        c.client_name.toLowerCase().includes(query),
-      )
-    : MOCK_CHECKLISTS;
+    ? source.filter((c) => c.client_name.toLowerCase().includes(query))
+    : source;
   const start = (page - 1) * perPage;
   return {
     items: filtered.slice(start, start + perPage),
@@ -204,6 +250,32 @@ export function mockChecklists(
 }
 
 const MOCK_BY_DAY_COUNTS = [1, 0, 2, 3, 1, 0, 2, 1, 4, 2, 0, 3, 1, 2];
+
+const ALL_QUESTIONS = [
+  ...MOCK_QUESTIONS_R1,
+  ...MOCK_QUESTIONS_R2,
+  ...MOCK_QUESTIONS_R3,
+];
+
+/** Сколько раз пропускали каждый вопрос (спека §4: все 10, по убыванию). */
+const MOCK_SKIP_COUNTS: Record<string, number> = {
+  r3q2: 7,
+  r2q2: 5,
+  r3q3: 4,
+  r1q2: 3,
+  r1q4: 2,
+  r2q1: 2,
+  r2q3: 1,
+  r3q1: 1,
+  r1q1: 0,
+  r1q3: 0,
+};
+
+const MOCK_SKIPS_BY_QUESTION: QuestionSkipStat[] = ALL_QUESTIONS.map((q) => ({
+  question_id: q.id,
+  label: q.text.slice(0, 60),
+  count: MOCK_SKIP_COUNTS[q.id] ?? 0,
+})).sort((a, b) => b.count - a.count);
 
 export function mockStats(): StatsResponse {
   return {
@@ -218,6 +290,9 @@ export function mockStats(): StatsResponse {
       date: daysAgoISO(13 - i),
       count,
     })),
+    skips_by_question: MOCK_SKIPS_BY_QUESTION,
+    avg_lead_score: 6.4,
+    stage_counts: { new: 5, warm: 9, hot: 7, rejected: 3 },
   };
 }
 
@@ -266,5 +341,6 @@ export function mockResults(): ResultsResponse {
     session_id: MOCK_DEMO_SESSION_ID,
     checklist: MOCK_CHECKLIST,
     markdown: MOCK_MARKDOWN,
+    insights: MOCK_INSIGHTS,
   };
 }

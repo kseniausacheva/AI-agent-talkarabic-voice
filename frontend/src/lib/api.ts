@@ -225,20 +225,24 @@ export async function apiDownloadChecklist(
 
 /* ----------------------- Дашборд и статистика ----------------------- */
 
-export async function apiChecklists(
-  q: string,
-  page: number,
-  perPage = 20,
-): Promise<ChecklistsResponse> {
+export async function apiChecklists(opts: {
+  q?: string;
+  page?: number;
+  perPage?: number;
+  /** due=today — completed-записи с next_contact_date <= сегодня (спека §4). */
+  due?: "today";
+}): Promise<ChecklistsResponse> {
+  const { q = "", page = 1, perPage = 20, due } = opts;
   if (USE_MOCK) {
     await wait(400);
-    return mockChecklists(q, page, perPage);
+    return mockChecklists(q, page, perPage, due);
   }
   const params = new URLSearchParams({
     page: String(page),
     per_page: String(perPage),
   });
   if (q.trim()) params.set("q", q.trim());
+  if (due) params.set("due", due);
   const res = await request(`/api/checklists?${params.toString()}`);
   return res.json();
 }

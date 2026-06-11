@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from .checklist import ChecklistItem
+from .checklist import ChecklistItem, LeadInsights
 from .question import Answer, Question
 
 
@@ -19,6 +19,7 @@ class SessionState(BaseModel):
     all_answers: List[Answer] = []
     round_summaries: List[str] = []
     checklist_items: List[ChecklistItem] = []
+    insights: Optional[LeadInsights] = None
     markdown_content: Optional[str] = None
     is_complete: bool = False
 
@@ -50,3 +51,4 @@ class ResultsResponse(BaseModel):
     markdown: str
     client_name: str = ""
     client_date: str = ""
+    insights: Optional[LeadInsights] = None  # null для старых записей

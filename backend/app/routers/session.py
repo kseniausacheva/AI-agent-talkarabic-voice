@@ -191,6 +191,7 @@ async def get_results(
         markdown=state.markdown_content,
         client_name=state.client_name,
         client_date=state.client_date,
+        insights=state.insights,
     )
 
 

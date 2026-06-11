@@ -38,12 +38,25 @@ async def sync_checklist_to_sheets(session_id: str) -> None:
             summaries = json.loads(row.summaries_json or "[]")
             summary = " · ".join(summaries)[:SUMMARY_MAX_LEN]
 
+            insights = {}
+            if row.insights_json:
+                try:
+                    parsed = json.loads(row.insights_json)
+                    if isinstance(parsed, dict):
+                        insights = parsed
+                except ValueError:
+                    pass
+            lead_score = insights.get("lead_score")
+
             payload = {
                 "secret": settings.gsheets_secret,
                 "date": row.client_date,
                 "client_name": row.client_name,
                 "manager": manager.display_name if manager else "",
                 "summary": summary,
+                "lead_score": lead_score if lead_score is not None else "",
+                "stage": insights.get("stage") or "",
+                "next_contact_date": insights.get("next_contact_date") or "",
                 "session_id": row.id,
             }
 

@@ -16,12 +16,12 @@ import json
 import logging
 import re
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
 from app.config import get_settings
-from app.models.checklist import ChecklistItem
+from app.models.checklist import ChecklistItem, LeadInsights
 from app.models.question import Answer
 from app.agent import prompts
 
@@ -48,6 +48,19 @@ def _strip_markdown_json(raw: str) -> str:
     if match:
         return match.group(1).strip()
     return raw
+
+
+def _parse_insights(raw: Any) -> LeadInsights:
+    """insights от LLM → LeadInsights. Отсутствует/битый → дефолты, НЕ исключение."""
+    if not isinstance(raw, dict):
+        if raw is not None:
+            logger.warning("LLM insights is not an object (%s), using defaults", type(raw))
+        return LeadInsights()
+    try:
+        return LeadInsights.model_validate(raw)
+    except Exception as exc:  # pragma: no cover — поля толерантны, но страхуемся
+        logger.warning("Malformed insights from LLM, using defaults: %s", exc)
+        return LeadInsights()
 
 
 def _parse_json(raw: str) -> Dict[str, Any]:
@@ -112,8 +125,12 @@ class LLMService:
         self,
         all_answers: List[Answer],
         round_summaries: List[str],
-    ) -> List[ChecklistItem]:
-        user_payload = self._format_history(all_answers, round_summaries)
+        client_date: str = "",
+    ) -> Tuple[List[ChecklistItem], LeadInsights]:
+        """Финальная агрегация: чеклист + аналитика лида (insights) одним вызовом."""
+        user_payload = self._format_history(
+            all_answers, round_summaries, client_date=client_date
+        )
         data = self._chat_json(
             system=prompts.SYSTEM_GENERATE_CHECKLIST,
             user=user_payload,
@@ -128,14 +145,19 @@ class LLMService:
                 logger.warning("Skipping malformed checklist item %s: %s", item, exc)
         if not items:
             raise LLMError("LLM returned empty checklist")
-        return items
+        insights = _parse_insights(data.get("insights"))
+        return items, insights
 
     @staticmethod
     def _format_history(
         answers: List[Answer],
         summaries: Optional[List[str]] = None,
+        client_date: str = "",
     ) -> str:
         lines: List[str] = []
+        if client_date:
+            lines.append(f"Дата контакта: {client_date}")
+            lines.append("")
         if summaries:
             for i, s in enumerate(summaries, start=1):
                 lines.append(f"Резюме раунда {i}: {s}")

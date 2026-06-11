@@ -1,11 +1,12 @@
 from typing import List, Optional, TypedDict
 
-from app.models.checklist import ChecklistItem
+from app.models.checklist import ChecklistItem, LeadInsights
 from app.models.question import Answer, Question
 
 
 class AgentState(TypedDict, total=False):
     session_id: str
+    client_date: str
 
     current_round: int
     max_rounds: int
@@ -16,6 +17,7 @@ class AgentState(TypedDict, total=False):
     round_summaries: List[str]
 
     checklist_items: List[ChecklistItem]
+    insights: LeadInsights
     markdown_content: str
 
     is_complete: bool

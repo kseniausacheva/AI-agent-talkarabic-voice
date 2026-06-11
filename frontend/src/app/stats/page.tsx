@@ -41,6 +41,10 @@ export default function StatsPage() {
     ? Math.max(1, ...stats.by_day.map((d) => d.count))
     : 1;
 
+  const maxSkip = stats
+    ? Math.max(1, ...stats.skips_by_question.map((s) => s.count))
+    : 1;
+
   return (
     <AuthGuard>
       <MockBanner />
@@ -75,10 +79,43 @@ export default function StatsPage() {
 
           {stats && (
             <>
-              <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3 mb-12">
+              <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3 mb-6">
                 <BigNumber label="За эту неделю" value={stats.completed_this_week} />
                 <BigNumber label="Всего завершено" value={stats.total_completed} />
                 <BigNumber label="В работе" value={stats.in_progress} />
+              </div>
+
+              <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-2 mb-12">
+                <BigNumber
+                  label="Средний score лида"
+                  value={
+                    stats.avg_lead_score !== null
+                      ? stats.avg_lead_score.toFixed(1)
+                      : "—"
+                  }
+                />
+                <div className="bg-bg p-6 sm:p-7">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-2.5">
+                    {STAGES.map((s) => (
+                      <span
+                        key={s.key}
+                        className="inline-flex items-center gap-1.5"
+                      >
+                        <span
+                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${s.chip}`}
+                        >
+                          {s.label}
+                        </span>
+                        <span className="text-sm font-semibold tabular-nums text-ink">
+                          {stats.stage_counts[s.key]}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-xs text-muted">
+                    Стадии лидов (завершённые)
+                  </div>
+                </div>
               </div>
 
               <section className="mb-12">
@@ -128,6 +165,34 @@ export default function StatsPage() {
                 </div>
               </section>
 
+              <section className="mb-12">
+                <h2 className="text-base font-medium text-ink mb-1">
+                  Какие вопросы пропускают
+                </h2>
+                <p className="text-xs text-muted mb-4">
+                  Сколько раз менеджеры нажимали «Пропустить» — подсказка для
+                  коучинга.
+                </p>
+                <div className="rounded-xl border border-line bg-surface p-5 space-y-2.5">
+                  {stats.skips_by_question.map((s) => (
+                    <div key={s.question_id} className="flex items-center gap-3">
+                      <span className="flex-1 min-w-0 truncate text-xs text-muted">
+                        {s.label}
+                      </span>
+                      <div className="w-28 sm:w-44 shrink-0 h-2.5 rounded-full bg-surface-elev overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-[width] duration-300"
+                          style={{ width: `${(s.count / maxSkip) * 100}%` }}
+                        />
+                      </div>
+                      <span className="w-6 shrink-0 text-right text-xs tabular-nums text-ink">
+                        {s.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <section>
                 <h2 className="text-base font-medium text-ink mb-4">
                   Последние 14 дней
@@ -159,7 +224,14 @@ export default function StatsPage() {
   );
 }
 
-function BigNumber({ label, value }: { label: string; value: number }) {
+const STAGES = [
+  { key: "new", label: "новый", chip: "bg-surface-elev text-muted" },
+  { key: "warm", label: "тёплый", chip: "bg-primary/12 text-primary" },
+  { key: "hot", label: "горячий", chip: "bg-success/12 text-success" },
+  { key: "rejected", label: "отказ", chip: "bg-danger/10 text-danger" },
+] as const;
+
+function BigNumber({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="bg-bg p-6 sm:p-7">
       <div className="text-4xl font-semibold tracking-[-0.03em] text-ink tabular-nums mb-1.5">

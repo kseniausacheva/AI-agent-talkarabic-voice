@@ -1,4 +1,5 @@
 """Дашборд: список чеклистов (с пагинацией и поиском) и статистика (admin)."""
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -7,17 +8,68 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.questions_template import questions_for_round
 from app.db import Checklist, Manager, get_session as get_db_session
 from app.services.auth import get_current_manager, require_admin
 
 router = APIRouter(prefix="/api", tags=["checklists"])
 logger = logging.getLogger(__name__)
 
+SKIP_LABEL_MAX_LEN = 60
+
+# Все 10 вопросов шаблона (для skips_by_question)
+_ALL_QUESTIONS = [q for r in (1, 2, 3) for q in questions_for_round(r)]
+
+_STAGES = ("new", "warm", "hot", "rejected")
+
+
+def _insights_fields(row: Checklist) -> dict:
+    """lead_score / stage / next_contact_date из insights_json (None у старых записей)."""
+    fields = {"lead_score": None, "stage": None, "next_contact_date": None}
+    if not row.insights_json:
+        return fields
+    try:
+        data = json.loads(row.insights_json)
+    except ValueError:
+        return fields
+    if not isinstance(data, dict):
+        return fields
+    score = data.get("lead_score")
+    if isinstance(score, int) and not isinstance(score, bool):
+        fields["lead_score"] = score
+    stage = data.get("stage")
+    if stage in _STAGES:
+        fields["stage"] = stage
+    ncd = data.get("next_contact_date")
+    if isinstance(ncd, str) and ncd:
+        fields["next_contact_date"] = ncd
+    return fields
+
+
+def _checklist_item(checklist: Checklist, display_name: str, fields: dict) -> dict:
+    return {
+        "id": checklist.id,
+        "client_name": checklist.client_name,
+        "client_date": checklist.client_date,
+        "status": checklist.status,
+        "created_at": checklist.created_at,
+        "completed_at": checklist.completed_at,
+        "manager_name": display_name,
+        "lead_score": fields["lead_score"],
+        "stage": fields["stage"],
+        "next_contact_date": fields["next_contact_date"],
+        "completeness": checklist.completeness,
+    }
+
 
 @router.get("/checklists")
 async def list_checklists(
     q: str = Query(default="", description="Поиск по client_name (case-insensitive)"),
     status: Optional[str] = Query(default=None, description="in_progress | completed"),
+    due: Optional[str] = Query(
+        default=None,
+        description="today — completed-записи с next_contact_date <= сегодня (UTC), без отказов",
+    ),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     manager: Manager = Depends(get_current_manager),
@@ -29,6 +81,27 @@ async def list_checklists(
     )
     if manager.role != "admin":
         stmt = stmt.where(Checklist.manager_id == manager.id)
+
+    if due == "today":
+        # «Сегодня связаться»: completed, next_contact_date <= сегодня UTC,
+        # stage != rejected; сортировка по next_contact_date asc.
+        # next_contact_date живёт в insights_json — фильтруем в Python
+        # (объёмы данных школы небольшие).
+        stmt = stmt.where(Checklist.status == "completed")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        due_rows = []
+        for checklist, display_name in (await db.execute(stmt)).all():
+            fields = _insights_fields(checklist)
+            ncd = fields["next_contact_date"]
+            if not ncd or ncd > today or fields["stage"] == "rejected":
+                continue
+            due_rows.append((checklist, display_name, fields))
+        due_rows.sort(key=lambda entry: entry[2]["next_contact_date"])
+        total = len(due_rows)
+        page_rows = due_rows[(page - 1) * per_page : (page - 1) * per_page + per_page]
+        items = [_checklist_item(c, name, f) for c, name, f in page_rows]
+        return {"items": items, "total": total, "page": page, "per_page": per_page}
+
     if status in ("in_progress", "completed"):
         stmt = stmt.where(Checklist.status == status)
     stmt = stmt.order_by(Checklist.created_at.desc())
@@ -52,15 +125,7 @@ async def list_checklists(
         ).all()
 
     items = [
-        {
-            "id": checklist.id,
-            "client_name": checklist.client_name,
-            "client_date": checklist.client_date,
-            "status": checklist.status,
-            "created_at": checklist.created_at,
-            "completed_at": checklist.completed_at,
-            "manager_name": display_name,
-        }
+        _checklist_item(checklist, display_name, _insights_fields(checklist))
         for checklist, display_name in rows
     ]
     return {"items": items, "total": total, "page": page, "per_page": per_page}
@@ -90,9 +155,11 @@ async def stats(
 
     completed_rows = (
         await db.execute(
-            select(Checklist.completed_at, Checklist.manager_id).where(
-                Checklist.status == "completed"
-            )
+            select(
+                Checklist.completed_at,
+                Checklist.manager_id,
+                Checklist.insights_json,
+            ).where(Checklist.status == "completed")
         )
     ).all()
     total_completed = len(completed_rows)
@@ -112,9 +179,27 @@ async def stats(
     completed_this_week = 0
     per_manager: dict = {}
     day_counts: dict = {}
-    for completed_at, manager_id in completed_rows:
+    lead_scores: list = []
+    stage_counts = {stage: 0 for stage in _STAGES}
+    for completed_at, manager_id, insights_json in completed_rows:
         manager_stats = per_manager.setdefault(manager_id, {"week": 0, "total": 0})
         manager_stats["total"] += 1
+
+        insights = {}
+        if insights_json:
+            try:
+                parsed = json.loads(insights_json)
+                if isinstance(parsed, dict):
+                    insights = parsed
+            except ValueError:
+                pass
+        score = insights.get("lead_score")
+        if isinstance(score, int) and not isinstance(score, bool):
+            lead_scores.append(score)
+        stage = insights.get("stage")
+        if stage in stage_counts:
+            stage_counts[stage] += 1
+
         completed_date = _parse_utc_date(completed_at)
         if completed_date is None:
             continue
@@ -122,6 +207,39 @@ async def stats(
             completed_this_week += 1
             manager_stats["week"] += 1
         day_counts[completed_date] = day_counts.get(completed_date, 0) + 1
+
+    avg_lead_score = (
+        round(sum(lead_scores) / len(lead_scores), 1) if lead_scores else None
+    )
+
+    # Пропуски по вопросам: skipped=true во всех answers_json (любой статус сессии).
+    # Все 10 вопросов шаблона, label — первые 60 символов текста, сорт. по count desc.
+    skip_counts = {question.id: 0 for question in _ALL_QUESTIONS}
+    answers_rows = (await db.execute(select(Checklist.answers_json))).all()
+    for (answers_json,) in answers_rows:
+        try:
+            answers = json.loads(answers_json or "[]")
+        except ValueError:
+            continue
+        if not isinstance(answers, list):
+            continue
+        for answer in answers:
+            if not isinstance(answer, dict):
+                continue
+            qid = answer.get("question_id")
+            if answer.get("skipped") and qid in skip_counts:
+                skip_counts[qid] += 1
+    skips_by_question = sorted(
+        (
+            {
+                "question_id": question.id,
+                "label": question.text[:SKIP_LABEL_MAX_LEN],
+                "count": skip_counts[question.id],
+            }
+            for question in _ALL_QUESTIONS
+        ),
+        key=lambda entry: -entry["count"],
+    )
 
     by_manager = sorted(
         (
@@ -146,4 +264,7 @@ async def stats(
         "in_progress": in_progress,
         "by_manager": by_manager,
         "by_day": by_day,
+        "skips_by_question": skips_by_question,
+        "avg_lead_score": avg_lead_score,
+        "stage_counts": stage_counts,
     }

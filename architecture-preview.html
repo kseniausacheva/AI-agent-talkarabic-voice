@@ -1063,7 +1063,8 @@ flowchart LR
       <li><span class="label">LLM</span><span class="value"><code>minimax/minimax-m3</code> через OpenRouter (OpenAI SDK 1.59 + base_url)</span></li>
       <li><span class="label">Speech-to-text</span><span class="value">Whisper Small/Medium локально, через <code>transformers pipeline</code>, ffmpeg для webm→wav 16 kHz</span></li>
       <li><span class="label">Audio (browser)</span><span class="value">Native MediaRecorder API, webm/Opus</span></li>
-      <li><span class="label">Хранение сессий</span><span class="value">In-memory dict с <code>asyncio.Lock</code>. На прод — Redis / SQLite</span></li>
+      <li><span class="label">Хранение</span><span class="value">SQLite (менеджеры + чеклисты), JWT-auth с инвайт-кодами, экспорт в Google Sheets вебхуком</span></li>
+      <li><span class="label">Аналитика лида</span><span class="value">MiniMax дополнительно отдаёт score 1–10, стадию, возражения, follow-up черновик, дату касания — без лишнего вызова</span></li>
       <li><span class="label">UI токены</span><span class="value">OKLCH only. Brand-голубой <code>oklch(0.56 0.15 245)</code>, accent-красный <code>oklch(0.56 0.20 25)</code></span></li>
       <li><span class="label">Дизайн-система</span><span class="value">impeccable skill, PRODUCT.md + DESIGN.md в репозитории</span></li>
     </ul>

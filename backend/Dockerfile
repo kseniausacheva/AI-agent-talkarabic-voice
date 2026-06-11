@@ -33,6 +33,9 @@ RUN mkdir -p /home/user/.cache && chown -R user:user /home/user/.cache
 
 COPY --chown=user:user ./app /app/app
 
+# Каталог SQLite: /app принадлежит root, поэтому создаём data заранее (HF Spaces uid 1000)
+RUN mkdir -p /app/data && chown -R user:user /app/data
+
 USER user
 
 ENV PORT=7860

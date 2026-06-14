@@ -9,11 +9,14 @@ import {
   mockStart,
   mockStats,
   mockSubmit,
+  mockUpdateDeal,
 } from "./mock-data";
 import type {
   AnswerPayload,
   AuthResponse,
   ChecklistsResponse,
+  DealInfo,
+  DealUpdate,
   Manager,
   ResultsResponse,
   SessionStartResponse,
@@ -221,6 +224,26 @@ export async function apiDownloadChecklist(
     blob: await res.blob(),
     filename: match?.[1] ?? `checklist-${sessionId}.md`,
   };
+}
+
+/**
+ * Ручное обновление сделки (продукт, стоимость, оплата). Шлём только
+ * изменённые поля. Возвращает актуальный DealInfo.
+ */
+export async function apiUpdateDeal(
+  sessionId: string,
+  changes: DealUpdate,
+): Promise<DealInfo> {
+  if (USE_MOCK) {
+    await wait(300);
+    return mockUpdateDeal(changes);
+  }
+  const res = await request(`/api/session/${sessionId}/deal`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  return res.json();
 }
 
 /* ----------------------- Дашборд и статистика ----------------------- */

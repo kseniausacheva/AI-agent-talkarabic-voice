@@ -23,6 +23,30 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatRub(n: number): string {
+  return n.toLocaleString("ru-RU").replace(/ /g, " ") + " ₽";
+}
+
+function DealCell({ item }: { item: ChecklistListItem }) {
+  if (item.paid) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 px-2.5 py-0.5 text-xs font-medium text-success">
+        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+        Оплачено
+        {item.price != null && (
+          <span className="tabular-nums">· {formatRub(item.price)}</span>
+        )}
+      </span>
+    );
+  }
+  if (item.price != null) {
+    return (
+      <span className="tabular-nums text-muted">{formatRub(item.price)}</span>
+    );
+  }
+  return <span className="text-subtle">—</span>;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -78,7 +102,7 @@ export default function DashboardPage() {
         <div className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h1 className="text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] font-semibold tracking-[-0.03em] text-ink leading-tight mb-2">
+              <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-2">
                 Чеклисты
               </h1>
               <p className="text-sm text-muted">
@@ -98,7 +122,7 @@ export default function DashboardPage() {
                   setPage(1);
                 }}
                 placeholder="Поиск по имени клиента…"
-                className="w-full h-10 rounded-lg border border-line-strong bg-bg pl-10 pr-4 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="h-11 w-full rounded-md border border-line-strong bg-bg pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
               />
             </label>
           </div>
@@ -110,8 +134,9 @@ export default function DashboardPage() {
           )}
 
           {dueItems.length > 0 && (
-            <section className="mb-8 rounded-xl border border-line bg-surface p-5">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-muted mb-3">
+            <section className="card mb-8 p-5">
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
                 Сегодня связаться
               </h2>
               <ul className="divide-y divide-line">
@@ -155,22 +180,23 @@ export default function DashboardPage() {
             </section>
           )}
 
-          <div className="overflow-x-auto rounded-xl border border-line">
+          <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-line bg-surface text-left text-xs text-muted">
+                <tr className="border-b border-line bg-surface text-left text-xs font-medium text-muted">
                   <th className="px-4 py-3 font-medium">Дата</th>
                   <th className="px-4 py-3 font-medium">Клиент</th>
                   <th className="px-4 py-3 font-medium">Менеджер</th>
                   <th className="px-4 py-3 font-medium">Score</th>
                   <th className="px-4 py-3 font-medium">Связаться</th>
+                  <th className="px-4 py-3 font-medium">Сделка</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10">
+                    <td colSpan={7} className="px-4 py-10">
                       <span className="flex items-center justify-center gap-3 text-muted">
                         <Loader2 size={16} className="animate-spin text-primary" />
                         Загружаем…
@@ -180,7 +206,7 @@ export default function DashboardPage() {
                 )}
                 {!loading && data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-muted">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted">
                       {q.trim()
                         ? "Ничего не найдено по запросу."
                         : "Чеклистов пока нет."}
@@ -226,6 +252,9 @@ export default function DashboardPage() {
                         >
                           {item.next_contact_date ?? "—"}
                         </td>
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          <DealCell item={item} />
+                        </td>
                         <td className="px-4 py-3.5">
                           {completed ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 text-success px-2.5 py-0.5 text-xs font-medium">
@@ -255,7 +284,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1 || loading}
-                className="inline-flex items-center gap-1 h-9 px-3 rounded-md border border-line-strong bg-surface text-sm hover:bg-surface-elev transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-secondary btn-sm disabled:opacity-40"
               >
                 <ChevronLeft size={14} />
                 Назад
@@ -267,7 +296,7 @@ export default function DashboardPage() {
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages || loading}
-                className="inline-flex items-center gap-1 h-9 px-3 rounded-md border border-line-strong bg-surface text-sm hover:bg-surface-elev transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="btn btn-secondary btn-sm disabled:opacity-40"
               >
                 Вперёд
                 <ChevronRight size={14} />

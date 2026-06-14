@@ -136,7 +136,7 @@ export default function SessionPage() {
         <div className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
           {(screen === "setup" || screen === "starting") && (
             <div className="max-w-md">
-              <h1 className="text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] font-semibold tracking-[-0.03em] text-ink leading-tight mb-3">
+              <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-3">
                 Новый клиент
               </h1>
               <p className="text-muted text-[0.95rem] mb-10 text-pretty">
@@ -162,7 +162,7 @@ export default function SessionPage() {
                     name="client_date"
                     value={clientDate}
                     onChange={(e) => setClientDate(e.target.value)}
-                    className="w-full h-11 rounded-lg border border-line-strong bg-bg px-4 text-[0.95rem] text-ink focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="input"
                   />
                 </label>
 
@@ -175,7 +175,7 @@ export default function SessionPage() {
                 <button
                   type="submit"
                   disabled={screen === "starting" || !clientName.trim()}
-                  className="inline-flex items-center gap-2 h-12 px-6 rounded-full bg-primary text-primary-ink font-medium hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="btn btn-primary"
                 >
                   {screen === "starting" ? (
                     <>
@@ -204,7 +204,7 @@ export default function SessionPage() {
                 <RoundIndicator currentRound={round} />
               </header>
 
-              <h1 className="text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] font-semibold tracking-[-0.03em] text-ink leading-tight mb-3">
+              <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-3">
                 {meta.title}
               </h1>
               <p className="text-muted text-[0.95rem] mb-10 max-w-prose text-pretty">
@@ -212,7 +212,7 @@ export default function SessionPage() {
               </p>
 
               {summaries.length > 0 && (
-                <details className="mb-8 rounded-xl border border-line bg-surface p-5">
+                <details className="card mb-8 p-5">
                   <summary className="cursor-pointer text-sm font-medium text-ink select-none">
                     Резюме предыдущих раундов ({summaries.length})
                   </summary>
@@ -265,7 +265,7 @@ export default function SessionPage() {
                   type="button"
                   onClick={submitRound}
                   disabled={!allAnswered || screen === "submitting"}
-                  className="inline-flex items-center gap-2 h-12 px-6 rounded-full bg-primary text-primary-ink font-medium hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="btn btn-primary"
                 >
                   {screen === "submitting" ? (
                     <>

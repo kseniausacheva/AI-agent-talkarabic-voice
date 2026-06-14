@@ -9,8 +9,12 @@ ChecklistStatus = Literal["confirmed", "needs_clarification", "not_discussed"]
 LeadStage = Literal["new", "warm", "hot", "rejected"]
 ObjectionType = Literal["price", "time", "tech", "trust", "other"]
 
+# Сделка: какой продукт хочет клиент
+ProductType = Literal["individual", "course", "undecided"]
+
 _STAGES = ("new", "warm", "hot", "rejected")
 _OBJECTION_TYPES = ("price", "time", "tech", "trust", "other")
+_PRODUCT_TYPES = ("individual", "course", "undecided")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -39,6 +43,25 @@ def _str_or_empty(value: Any) -> str:
     if value is None:
         return ""
     return value if isinstance(value, str) else str(value)
+
+
+def _positive_float_or_none(value: Any) -> Optional[float]:
+    """Стоимость: число (в т.ч. строка «20000»/«20 000 ₽») → float; иначе None."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value > 0 else None
+    if isinstance(value, str):
+        digits = re.sub(r"[^\d.,]", "", value).replace(",", ".")
+        # если несколько точек (тысячные разделители) — оставляем только цифры
+        if digits.count(".") > 1:
+            digits = digits.replace(".", "")
+        try:
+            num = float(digits)
+        except ValueError:
+            return None
+        return num if num > 0 else None
+    return None
 
 
 class Objection(BaseModel):
@@ -148,3 +171,61 @@ class LeadInsights(BaseModel):
             if task.title.strip():
                 result.append(task)
         return result
+
+
+class DealInfo(BaseModel):
+    """Сделка по клиенту: что покупает, за сколько, статус оплаты.
+
+    Часть полей (product/product_note/price/installment/planned_payment_date)
+    ИИ предлагает из разговора; оплату (paid/paid_date) менеджер проставляет
+    руками позже — деньги приходят не сразу. paid=True ⇒ сделка закрыта.
+    Валидация толерантная: битые значения → дефолты, запрос не падает.
+    """
+
+    product: Optional[ProductType] = None     # individual | course | undecided
+    product_note: str = ""                      # «в следующий поток» / «только индивидуально»
+    price: Optional[float] = None               # Стоимость
+    currency: str = "RUB"
+    installment: bool = False                    # рассрочка
+    planned_payment_date: Optional[str] = None   # когда планирует оплатить
+    paid: bool = False                          # оплачено = сделка закрыта
+    paid_date: Optional[str] = None             # дата фактической оплаты (для аналитики)
+
+    @field_validator("product", mode="before")
+    @classmethod
+    def _tolerant_product(cls, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip().lower() in _PRODUCT_TYPES:
+            return value.strip().lower()
+        return None
+
+    @field_validator("product_note", mode="before")
+    @classmethod
+    def _tolerant_text(cls, value: Any) -> str:
+        return _str_or_empty(value)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _tolerant_currency(cls, value: Any) -> str:
+        return _str_or_empty(value).strip().upper() or "RUB"
+
+    @field_validator("price", mode="before")
+    @classmethod
+    def _tolerant_price(cls, value: Any) -> Optional[float]:
+        return _positive_float_or_none(value)
+
+    @field_validator("installment", "paid", mode="before")
+    @classmethod
+    def _tolerant_bool(cls, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "1", "yes", "да", "оплачено")
+        return bool(value)
+
+    @field_validator("planned_payment_date", "paid_date", mode="before")
+    @classmethod
+    def _tolerant_date(cls, value: Any) -> Optional[str]:
+        return _valid_date_or_none(value)
+
+    def is_closed(self) -> bool:
+        return self.paid

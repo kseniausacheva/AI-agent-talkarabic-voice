@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from .checklist import ChecklistItem, LeadInsights
+from .checklist import ChecklistItem, DealInfo, LeadInsights
 from .question import Answer, Question
 
 
@@ -20,6 +20,7 @@ class SessionState(BaseModel):
     round_summaries: List[str] = []
     checklist_items: List[ChecklistItem] = []
     insights: Optional[LeadInsights] = None
+    deal: Optional[DealInfo] = None
     markdown_content: Optional[str] = None
     is_complete: bool = False
 
@@ -52,3 +53,18 @@ class ResultsResponse(BaseModel):
     client_name: str = ""
     client_date: str = ""
     insights: Optional[LeadInsights] = None  # null для старых записей
+    deal: Optional[DealInfo] = None  # null для старых записей
+
+
+class DealUpdate(BaseModel):
+    """Частичное обновление сделки менеджером (PATCH). Все поля опциональны —
+    приходит только то, что меняли. Валидация значений — на уровне DealInfo."""
+
+    product: Optional[str] = None
+    product_note: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    installment: Optional[bool] = None
+    planned_payment_date: Optional[str] = None
+    paid: Optional[bool] = None
+    paid_date: Optional[str] = None

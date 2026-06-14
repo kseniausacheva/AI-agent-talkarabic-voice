@@ -2,6 +2,8 @@ import type {
   ChecklistItem,
   ChecklistListItem,
   ChecklistsResponse,
+  DealInfo,
+  DealUpdate,
   LeadInsights,
   Manager,
   Question,
@@ -173,6 +175,31 @@ export const MOCK_INSIGHTS: LeadInsights = {
   ],
 };
 
+/** Сделка для demo-abc123 (mock-режим). Мутируется mockUpdateDeal. */
+export const MOCK_DEAL: DealInfo = {
+  product: "individual",
+  product_note: "не хочет в группу-поток, только индивидуально",
+  price: 20000,
+  currency: "RUB",
+  installment: true,
+  planned_payment_date: daysAgoISO(-5),
+  paid: false,
+  paid_date: null,
+};
+
+let mockDealState: DealInfo = { ...MOCK_DEAL };
+
+export function mockUpdateDeal(changes: DealUpdate): DealInfo {
+  mockDealState = { ...mockDealState, ...changes };
+  if (mockDealState.paid && !mockDealState.paid_date) {
+    mockDealState.paid_date = daysAgoISO(0);
+  }
+  if (!mockDealState.paid) {
+    mockDealState.paid_date = null;
+  }
+  return { ...mockDealState };
+}
+
 export const MOCK_CHECKLISTS: ChecklistListItem[] = [
   {
     id: MOCK_DEMO_SESSION_ID,
@@ -187,6 +214,9 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     // Сегодня — запись попадает в блок «Сегодня связаться» (спека §5).
     next_contact_date: daysAgoISO(0),
     completeness: 80,
+    paid: false,
+    price: 20000,
+    product: "individual",
   },
   {
     id: "demo-omar456",
@@ -201,6 +231,9 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     // Вчера — просроченная дата подсвечивается accent-цветом в таблице.
     next_contact_date: daysAgoISO(1),
     completeness: 90,
+    paid: true,
+    price: 45000,
+    product: "course",
   },
   {
     id: "demo-fatima789",
@@ -214,6 +247,9 @@ export const MOCK_CHECKLISTS: ChecklistListItem[] = [
     stage: null,
     next_contact_date: null,
     completeness: null,
+    paid: false,
+    price: null,
+    product: null,
   },
 ];
 
@@ -293,6 +329,16 @@ export function mockStats(): StatsResponse {
     skips_by_question: MOCK_SKIPS_BY_QUESTION,
     avg_lead_score: 6.4,
     stage_counts: { new: 5, warm: 9, hot: 7, rejected: 3 },
+    sales: {
+      month: daysAgoISO(0).slice(0, 7),
+      closed_count: 5,
+      revenue: 187000,
+      avg_check: 37400,
+      pending_count: 4,
+      pending_revenue: 96000,
+      by_product: { individual: 3, course: 2, undecided: 0 },
+    },
+    objection_counts: { price: 8, time: 5, tech: 2, trust: 3, other: 1 },
   };
 }
 
@@ -342,5 +388,6 @@ export function mockResults(): ResultsResponse {
     checklist: MOCK_CHECKLIST,
     markdown: MOCK_MARKDOWN,
     insights: MOCK_INSIGHTS,
+    deal: { ...mockDealState },
   };
 }

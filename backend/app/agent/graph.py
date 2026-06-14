@@ -28,15 +28,19 @@ def build_graph():
     graph.add_node("generate_checklist", generate_checklist_node)
     graph.add_node("generate_markdown", generate_markdown_node)
 
-    graph.add_edge(START, "analyze_round")
+    # Маршрут решаем на входе: для НЕ-финального раунда — analyze_round (резюме
+    # для менеджера) → следующие вопросы; для финального — СРАЗУ generate_checklist.
+    # Так финальный шаг не платит за лишний analyze_round(3): большой промпт
+    # всё равно видит все 10 ответов, а резюме 3-го раунда нигде не показывается.
     graph.add_conditional_edges(
-        "analyze_round",
+        START,
         check_rounds_condition,
         {
-            "next_questions": "next_questions",
+            "next_questions": "analyze_round",
             "generate_checklist": "generate_checklist",
         },
     )
+    graph.add_edge("analyze_round", "next_questions")
     graph.add_edge("next_questions", END)
     graph.add_edge("generate_checklist", "generate_markdown")
     graph.add_edge("generate_markdown", END)

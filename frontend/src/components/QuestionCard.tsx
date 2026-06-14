@@ -27,16 +27,21 @@ export function QuestionCard({
 }: Props) {
   return (
     <article
-      className="animate-fade-up bg-surface border border-line rounded-2xl p-6 sm:p-7"
+      className="card animate-fade-up p-6 transition-shadow duration-300 hover:shadow-md sm:p-7"
       style={{ animationDelay: `${index * 60}ms` }}
     >
-      <header className="mb-5">
-        <div className="text-xs text-muted mb-2 tabular-nums">
-          Вопрос {index + 1} из {totalInRound}
+      <header className="mb-5 flex items-start gap-3">
+        <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-tint font-display text-sm tabular-nums text-primary-strong">
+          {index + 1}
+        </span>
+        <div>
+          <div className="mb-1 text-xs tabular-nums text-muted">
+            Вопрос {index + 1} из {totalInRound}
+          </div>
+          <h3 className="text-balance text-lg font-semibold leading-snug text-ink sm:text-xl">
+            {question.text}
+          </h3>
         </div>
-        <h3 className="text-lg sm:text-xl font-medium text-ink text-balance leading-snug">
-          {question.text}
-        </h3>
       </header>
 
       {skipped ? (

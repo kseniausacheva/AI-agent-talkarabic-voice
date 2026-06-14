@@ -21,6 +21,29 @@ SKIP_LABEL_MAX_LEN = 60
 _ALL_QUESTIONS = [q for r in (1, 2, 3) for q in questions_for_round(r)]
 
 _STAGES = ("new", "warm", "hot", "rejected")
+_PRODUCT_TYPES = ("individual", "course", "undecided")
+_OBJECTION_TYPES = ("price", "time", "tech", "trust", "other")
+
+
+def _deal_fields(row: Checklist) -> dict:
+    """paid / price / product из deal_json (дефолты у старых записей)."""
+    fields = {"paid": False, "price": None, "product": None}
+    if not getattr(row, "deal_json", None):
+        return fields
+    try:
+        data = json.loads(row.deal_json)
+    except ValueError:
+        return fields
+    if not isinstance(data, dict):
+        return fields
+    fields["paid"] = bool(data.get("paid"))
+    price = data.get("price")
+    if isinstance(price, (int, float)) and not isinstance(price, bool):
+        fields["price"] = float(price)
+    product = data.get("product")
+    if product in _PRODUCT_TYPES:
+        fields["product"] = product
+    return fields
 
 
 def _insights_fields(row: Checklist) -> dict:
@@ -47,6 +70,7 @@ def _insights_fields(row: Checklist) -> dict:
 
 
 def _checklist_item(checklist: Checklist, display_name: str, fields: dict) -> dict:
+    deal = _deal_fields(checklist)
     return {
         "id": checklist.id,
         "client_name": checklist.client_name,
@@ -59,6 +83,9 @@ def _checklist_item(checklist: Checklist, display_name: str, fields: dict) -> di
         "stage": fields["stage"],
         "next_contact_date": fields["next_contact_date"],
         "completeness": checklist.completeness,
+        "paid": deal["paid"],
+        "price": deal["price"],
+        "product": deal["product"],
     }
 
 
@@ -149,9 +176,11 @@ async def stats(
     admin: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Статистика для админа: итоги, ISO-неделя (с понедельника UTC), по менеджерам, по дням."""
+    """Статистика для админа: итоги, ISO-неделя (с понедельника UTC), по менеджерам,
+    по дням, плюс продажи за текущий месяц и причины отказов."""
     today = datetime.now(timezone.utc).date()
     week_start = today - timedelta(days=today.weekday())  # понедельник ISO-недели
+    month_start = today.replace(day=1)
 
     completed_rows = (
         await db.execute(
@@ -159,6 +188,7 @@ async def stats(
                 Checklist.completed_at,
                 Checklist.manager_id,
                 Checklist.insights_json,
+                Checklist.deal_json,
             ).where(Checklist.status == "completed")
         )
     ).all()
@@ -181,7 +211,14 @@ async def stats(
     day_counts: dict = {}
     lead_scores: list = []
     stage_counts = {stage: 0 for stage in _STAGES}
-    for completed_at, manager_id, insights_json in completed_rows:
+    objection_counts = {t: 0 for t in _OBJECTION_TYPES}
+    # Продажи: closed = оплачено в текущем месяце; pending = есть цена, не оплачено
+    revenue = 0.0
+    closed_count = 0
+    pending_revenue = 0.0
+    pending_count = 0
+    product_counts = {p: 0 for p in _PRODUCT_TYPES}
+    for completed_at, manager_id, insights_json, deal_json in completed_rows:
         manager_stats = per_manager.setdefault(manager_id, {"week": 0, "total": 0})
         manager_stats["total"] += 1
 
@@ -199,6 +236,34 @@ async def stats(
         stage = insights.get("stage")
         if stage in stage_counts:
             stage_counts[stage] += 1
+        for objection in insights.get("objections", []) or []:
+            if isinstance(objection, dict) and objection.get("type") in objection_counts:
+                objection_counts[objection["type"]] += 1
+
+        # Сделка: выручка за месяц + воронка
+        deal = {}
+        if deal_json:
+            try:
+                parsed_deal = json.loads(deal_json)
+                if isinstance(parsed_deal, dict):
+                    deal = parsed_deal
+            except ValueError:
+                pass
+        price = deal.get("price")
+        has_price = isinstance(price, (int, float)) and not isinstance(price, bool) and price > 0
+        if has_price:
+            if deal.get("paid"):
+                # дата оплаты: paid_date, иначе дата завершения чеклиста
+                paid_on = _parse_utc_date(deal.get("paid_date")) or _parse_utc_date(completed_at)
+                if paid_on is not None and paid_on >= month_start:
+                    revenue += float(price)
+                    closed_count += 1
+                    product = deal.get("product")
+                    if product in product_counts:
+                        product_counts[product] += 1
+            else:
+                pending_revenue += float(price)
+                pending_count += 1
 
         completed_date = _parse_utc_date(completed_at)
         if completed_date is None:
@@ -211,6 +276,15 @@ async def stats(
     avg_lead_score = (
         round(sum(lead_scores) / len(lead_scores), 1) if lead_scores else None
     )
+    sales = {
+        "month": month_start.strftime("%Y-%m"),
+        "closed_count": closed_count,
+        "revenue": round(revenue, 2),
+        "avg_check": round(revenue / closed_count, 2) if closed_count else None,
+        "pending_count": pending_count,
+        "pending_revenue": round(pending_revenue, 2),
+        "by_product": product_counts,
+    }
 
     # Пропуски по вопросам: skipped=true во всех answers_json (любой статус сессии).
     # Все 10 вопросов шаблона, label — первые 60 символов текста, сорт. по count desc.
@@ -267,4 +341,6 @@ async def stats(
         "skips_by_question": skips_by_question,
         "avg_lead_score": avg_lead_score,
         "stage_counts": stage_counts,
+        "sales": sales,
+        "objection_counts": objection_counts,
     }

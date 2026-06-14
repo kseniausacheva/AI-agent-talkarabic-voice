@@ -3,9 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, Mic } from "lucide-react";
 import { FormField } from "@/components/FormField";
 import { MockBanner } from "@/components/MockBanner";
+import { AuthBackdrop } from "@/components/AuthBackdrop";
 import { apiLogin } from "@/lib/api";
 import { setToken } from "@/lib/auth";
 
@@ -33,65 +34,77 @@ export default function LoginPage() {
   return (
     <>
       <MockBanner />
-      <main className="flex-1 flex items-center justify-center px-6 py-16">
-        <div className="w-full max-w-sm">
-          <div className="inline-flex items-center gap-2 text-xs font-medium text-muted mb-6">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            Внутренний инструмент · Школа арабского
-          </div>
-          <h1 className="text-2xl font-semibold tracking-[-0.03em] text-ink mb-2">
-            Вход для менеджера
-          </h1>
-          <p className="text-sm text-muted mb-8">
-            Введите логин и пароль, выданные администратором.
-          </p>
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6 py-16">
+        <AuthBackdrop />
+        <div className="relative w-full max-w-sm animate-fade-up">
+          <div className="card p-8 shadow-md">
+            <div className="mb-7 flex items-center gap-2.5">
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-ink text-white shadow-sm">
+                <Mic size={16} />
+              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="font-display text-[0.95rem] text-ink">
+                  Школа арабского
+                </span>
+                <span className="text-[0.68rem] text-muted">
+                  внутренний инструмент
+                </span>
+              </div>
+            </div>
+            <h1 className="font-display mb-1.5 text-[1.6rem] text-ink">
+              Вход для менеджера
+            </h1>
+            <p className="mb-7 text-sm text-muted">
+              Введите логин и пароль, выданные администратором.
+            </p>
 
-          <form onSubmit={onSubmit} className="space-y-4" noValidate>
-            <FormField
-              label="Логин"
-              name="username"
-              autoComplete="username"
-              value={username}
-              onChange={setUsername}
-              placeholder="ivanova"
-            />
-            <FormField
-              label="Пароль"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={setPassword}
-              placeholder="••••••••"
-            />
+            <form onSubmit={onSubmit} className="space-y-4" noValidate>
+              <FormField
+                label="Логин"
+                name="username"
+                autoComplete="username"
+                value={username}
+                onChange={setUsername}
+                placeholder="ivanova"
+              />
+              <FormField
+                label="Пароль"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={setPassword}
+                placeholder="••••••••"
+              />
 
-            {error && (
-              <p className="text-sm text-danger" role="alert">
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={pending || !username.trim() || !password}
-              className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-full bg-primary text-primary-ink font-medium hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {pending ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Входим…
-                </>
-              ) : (
-                "Войти"
+              {error && (
+                <p className="text-sm text-danger" role="alert">
+                  {error}
+                </p>
               )}
-            </button>
-          </form>
 
-          <p className="mt-8 text-sm text-muted">
+              <button
+                type="submit"
+                disabled={pending || !username.trim() || !password}
+                className="btn btn-primary w-full"
+              >
+                {pending ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Входим…
+                  </>
+                ) : (
+                  "Войти"
+                )}
+              </button>
+            </form>
+          </div>
+
+          <p className="mt-6 text-center text-sm text-muted">
             Нет аккаунта?{" "}
             <Link
               href="/register"
-              className="text-primary hover:underline underline-offset-4 font-medium"
+              className="font-medium text-primary-strong underline-offset-4 hover:underline"
             >
               Регистрация по инвайт-коду
             </Link>

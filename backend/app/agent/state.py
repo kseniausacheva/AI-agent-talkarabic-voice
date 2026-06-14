@@ -1,6 +1,6 @@
 from typing import List, Optional, TypedDict
 
-from app.models.checklist import ChecklistItem, LeadInsights
+from app.models.checklist import ChecklistItem, DealInfo, LeadInsights
 from app.models.question import Answer, Question
 
 
@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
 
     checklist_items: List[ChecklistItem]
     insights: LeadInsights
+    deal: DealInfo
     markdown_content: str
 
     is_complete: bool

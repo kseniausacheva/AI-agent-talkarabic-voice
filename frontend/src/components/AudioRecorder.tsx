@@ -176,7 +176,7 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
           value={transcript}
           onChange={(e) => setTranscript(e.target.value)}
           rows={4}
-          className="w-full resize-y rounded-lg border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed font-mono focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className="w-full resize-y rounded-xl border border-line-strong bg-bg px-4 py-3 font-mono text-[0.95rem] leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
           placeholder="Текст транскрипции…"
         />
         <div className="flex flex-wrap gap-2">
@@ -184,16 +184,12 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
             type="button"
             onClick={confirm}
             disabled={!transcript.trim()}
-            className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-ink h-10 px-4 text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary btn-sm"
           >
             <Check size={16} />
             Подтвердить
           </button>
-          <button
-            type="button"
-            onClick={reset}
-            className="inline-flex items-center gap-2 rounded-md border border-line-strong bg-surface h-10 px-4 text-sm hover:bg-surface-elev transition-colors"
-          >
+          <button type="button" onClick={reset} className="btn btn-secondary btn-sm">
             <RotateCcw size={16} />
             Перезаписать
           </button>
@@ -216,24 +212,39 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
 
   if (state === "recording") {
     return (
-      <div className="flex items-center gap-4" aria-live="polite">
+      <div className="flex items-center gap-5" aria-live="polite">
         <button
           type="button"
           onClick={stop}
           aria-label="Остановить запись"
           className={cn(
-            "h-16 w-16 rounded-full bg-recording text-white",
+            "h-16 w-16 rounded-full bg-recording text-white shadow-accent",
             "flex items-center justify-center animate-recording-pulse",
-            "hover:scale-[1.03] transition-transform",
+            "transition-transform hover:scale-[1.03]",
           )}
         >
           <Square size={22} fill="currentColor" />
         </button>
-        <div className="flex flex-col">
-          <span className="text-recording text-sm font-medium">Идёт запись</span>
-          <span className="font-mono text-2xl text-ink tabular-nums">
-            {mmss}
-          </span>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold text-recording">Идёт запись</span>
+          <div className="flex items-center gap-3">
+            <div
+              className="flex items-end gap-[3px]"
+              aria-hidden
+              style={{ height: 22 }}
+            >
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <span
+                  key={i}
+                  className="eq-bar"
+                  style={{ animationDelay: `${i * 0.11}s` }}
+                />
+              ))}
+            </div>
+            <span className="font-mono text-2xl tabular-nums text-ink">
+              {mmss}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -270,15 +281,16 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
           disabled={disabled}
           aria-label="Начать запись ответа"
           className={cn(
-            "self-start inline-flex items-center gap-3 h-12 pl-3 pr-5 rounded-full",
-            "bg-primary text-primary-ink hover:bg-primary-hover",
-            "transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+            "group inline-flex h-12 items-center gap-3 self-start rounded-full pl-3 pr-5",
+            "bg-accent text-white shadow-accent transition-all",
+            "hover:-translate-y-0.5 hover:bg-accent-hover",
+            "disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none",
           )}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/20 transition-transform group-hover:scale-105">
             <Mic size={18} />
           </span>
-          <span className="font-medium">Записать ответ</span>
+          <span className="font-semibold">Записать ответ</span>
         </button>
       ) : (
         <div className="space-y-3">
@@ -287,14 +299,14 @@ export function AudioRecorder({ questionId, onConfirm, disabled }: Props) {
             onChange={(e) => setTextValue(e.target.value)}
             rows={4}
             disabled={disabled}
-            className="w-full resize-y rounded-lg border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50"
+            className="w-full resize-y rounded-xl border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25 disabled:opacity-50"
             placeholder="Введите ответ текстом…"
           />
           <button
             type="button"
             onClick={confirmText}
             disabled={disabled || !textValue.trim()}
-            className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-ink h-10 px-4 text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary btn-sm"
           >
             <Check size={16} />
             Подтвердить
@@ -330,9 +342,9 @@ function ModeTab({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "h-7 px-3 rounded-md text-xs font-medium transition-colors",
-        active ? "bg-bg text-ink shadow-[0_1px_2px_oklch(0_0_0/0.06)]" : "text-muted hover:text-ink",
-        "disabled:opacity-50 disabled:cursor-not-allowed",
+        "h-7 rounded-md px-3 text-xs font-medium transition-colors",
+        active ? "bg-bg text-ink shadow-sm" : "text-muted hover:text-ink",
+        "disabled:cursor-not-allowed disabled:opacity-50",
       )}
     >
       {children}

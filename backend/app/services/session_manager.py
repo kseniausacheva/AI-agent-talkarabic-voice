@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.questions_template import questions_for_round
 from app.agent.state import AgentState
 from app.db import Checklist, Manager
-from app.models.checklist import ChecklistItem, LeadInsights
+from app.models.checklist import ChecklistItem, DealInfo, LeadInsights
 from app.models.question import Answer
 from app.models.session import SessionState
 
@@ -54,6 +54,20 @@ def _parse_insights_json(raw: Optional[str]) -> Optional[LeadInsights]:
         return None
 
 
+def _parse_deal_json(raw: Optional[str]) -> Optional[DealInfo]:
+    """deal_json из БД → DealInfo; None/битый JSON → None (старые записи)."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return DealInfo.model_validate(data)
+    except Exception:
+        logger.warning("Broken deal_json in DB, ignoring")
+        return None
+
+
 def _completeness(items: List[ChecklistItem]) -> Optional[int]:
     """0–100: % пунктов чеклиста со статусом != not_discussed."""
     if not items:
@@ -85,6 +99,7 @@ def _row_to_state(row: Checklist) -> SessionState:
         round_summaries=summaries,
         checklist_items=checklist_items,
         insights=_parse_insights_json(row.insights_json),
+        deal=_parse_deal_json(row.deal_json),
         markdown_content=row.markdown,
         is_complete=is_complete,
     )
@@ -224,6 +239,7 @@ class SessionManager:
                 items = list(result_state.get("checklist_items", []))
                 markdown = result_state.get("markdown_content")
                 insights = result_state.get("insights") or LeadInsights()
+                deal = result_state.get("deal") or DealInfo()
                 completeness = _completeness(items)
                 row.checklist_json = json.dumps(
                     [i.model_dump() for i in items], ensure_ascii=False
@@ -232,11 +248,13 @@ class SessionManager:
                 row.insights_json = json.dumps(
                     insights.model_dump(), ensure_ascii=False
                 )
+                row.deal_json = json.dumps(deal.model_dump(), ensure_ascii=False)
                 row.completeness = completeness
                 row.status = "completed"
                 row.completed_at = _utc_now_iso()
                 state.checklist_items = items
                 state.insights = insights
+                state.deal = deal
                 state.markdown_content = markdown
                 state.current_questions = []
             else:
@@ -247,6 +265,49 @@ class SessionManager:
 
             await db.commit()
             return state, is_complete
+
+    async def update_deal(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        manager: Manager,
+        changes: Dict,
+    ) -> DealInfo:
+        """Частичное ручное обновление сделки (PATCH). Только переданные поля
+        перезаписываются; остальные сохраняются. paid=True без даты ⇒ дата = сегодня.
+
+        Доступ: владелец сессии или admin (иначе SessionAccessError → 403)."""
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+
+            current = _parse_deal_json(row.deal_json) or DealInfo()
+            data = current.model_dump()
+            # накатываем только реально переданные (не None) поля
+            for key, value in changes.items():
+                if value is not None and key in data:
+                    data[key] = value
+
+            deal = DealInfo.model_validate(data)
+            # отметили оплату, но дату не указали — ставим сегодня (для аналитики)
+            if deal.paid and not deal.paid_date:
+                deal.paid_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # сняли оплату — дату оплаты обнуляем
+            if not deal.paid:
+                deal.paid_date = None
+
+            row.deal_json = json.dumps(deal.model_dump(), ensure_ascii=False)
+
+            # Пересобираем markdown, чтобы скачиваемый .md отражал актуальную
+            # сделку (стоимость/оплату/«закрыта»). Импорт ленивый — без LLM-зависимостей.
+            if row.checklist_json:
+                from app.services.file_generator import generate_markdown
+
+                items = [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
+                row.markdown = generate_markdown(row.id, items, deal=deal)
+
+            await db.commit()
+            return deal
 
 
 _instance: Optional[SessionManager] = None

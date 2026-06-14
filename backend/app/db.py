@@ -74,12 +74,15 @@ class Checklist(Base):
     # Спринт 3: аналитика лида
     insights_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     completeness: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Учёт продаж: продукт, стоимость, статус оплаты (DealInfo)
+    deal_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 # Миграции checklists: колонка → DDL (добавляется, если PRAGMA её не видит)
 _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",
     "completeness": "ALTER TABLE checklists ADD COLUMN completeness INTEGER",
+    "deal_json": "ALTER TABLE checklists ADD COLUMN deal_json TEXT",
 }
 
 

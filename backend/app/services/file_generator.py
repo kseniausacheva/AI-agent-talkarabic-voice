@@ -1,9 +1,9 @@
 """Генерация Markdown-чеклиста клиента Школы арабского из ChecklistItem."""
 from collections import defaultdict
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from app.models.checklist import ChecklistItem
+from app.models.checklist import ChecklistItem, DealInfo
 
 _STATUS_BOX = {
     "confirmed": "[x]",
@@ -17,8 +17,62 @@ _STATUS_LABEL = {
     "not_discussed": "не обсуждалось",
 }
 
+_PRODUCT_LABEL = {
+    "individual": "индивидуальные занятия",
+    "course": "курс / поток",
+    "undecided": "не определился",
+}
 
-def generate_markdown(session_id: str, items: List[ChecklistItem]) -> str:
+
+def _format_price(deal: DealInfo) -> str:
+    if deal.price is None:
+        return "не обсуждалась"
+    amount = f"{deal.price:,.0f}".replace(",", " ")
+    symbol = "₽" if deal.currency in ("RUB", "") else deal.currency
+    return f"{amount} {symbol}"
+
+
+def _format_payment(deal: DealInfo) -> str:
+    if deal.paid:
+        when = f" {deal.paid_date}" if deal.paid_date else ""
+        return f"оплачено{when} — ✅ сделка закрыта"
+    parts = []
+    if deal.price is not None:
+        parts.append("ожидает оплаты")
+    else:
+        parts.append("не обсуждалась")
+    if deal.installment:
+        parts.append("рассрочка")
+    if deal.planned_payment_date:
+        parts.append(f"план {deal.planned_payment_date}")
+    return ", ".join(parts)
+
+
+def _deal_section(deal: Optional[DealInfo]) -> List[str]:
+    """Секция «Сделка» — рендерим, только если есть осмысленные данные."""
+    if deal is None:
+        return []
+    has_data = bool(deal.product or deal.price is not None or deal.paid or deal.product_note)
+    if not has_data:
+        return []
+    lines = ["## Сделка", ""]
+    if deal.product:
+        product = _PRODUCT_LABEL.get(deal.product, deal.product)
+        note = f" — {deal.product_note}" if deal.product_note else ""
+        lines.append(f"- **Продукт:** {product}{note}")
+    elif deal.product_note:
+        lines.append(f"- **Продукт:** {deal.product_note}")
+    lines.append(f"- **Стоимость:** {_format_price(deal)}")
+    lines.append(f"- **Оплата:** {_format_payment(deal)}")
+    lines.append("")
+    return lines
+
+
+def generate_markdown(
+    session_id: str,
+    items: List[ChecklistItem],
+    deal: Optional[DealInfo] = None,
+) -> str:
     grouped: dict[str, list[ChecklistItem]] = defaultdict(list)
     for item in items:
         grouped[item.category].append(item)
@@ -31,6 +85,8 @@ def generate_markdown(session_id: str, items: List[ChecklistItem]) -> str:
     lines.append("")
     lines.append("---")
     lines.append("")
+
+    lines.extend(_deal_section(deal))
 
     for category, group_items in grouped.items():
         lines.append(f"## {category}")

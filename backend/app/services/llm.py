@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from openai import OpenAI
 
 from app.config import get_settings
-from app.models.checklist import ChecklistItem, LeadInsights
+from app.models.checklist import ChecklistItem, DealInfo, LeadInsights
 from app.models.question import Answer
 from app.agent import prompts
 
@@ -63,19 +63,38 @@ def _parse_insights(raw: Any) -> LeadInsights:
         return LeadInsights()
 
 
+def _parse_deal(raw: Any) -> DealInfo:
+    """deal от LLM → DealInfo. Отсутствует/битый → пустая сделка, НЕ исключение."""
+    if not isinstance(raw, dict):
+        if raw is not None:
+            logger.warning("LLM deal is not an object (%s), using defaults", type(raw))
+        return DealInfo()
+    try:
+        return DealInfo.model_validate(raw)
+    except Exception as exc:  # pragma: no cover — поля толерантны, но страхуемся
+        logger.warning("Malformed deal from LLM, using defaults: %s", exc)
+        return DealInfo()
+
+
 def _parse_json(raw: str) -> Dict[str, Any]:
     cleaned = _strip_markdown_json(raw)
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
-        logger.error("Failed to parse LLM JSON. Raw: %s", raw[:500])
-        raise LLMError(f"LLM returned non-JSON: {exc}") from exc
+    except json.JSONDecodeError:
+        pass
+    # MiniMax M3 порой возвращает объект ДВАЖДЫ ({...}{...}) или с текстом-
+    # префиксом. raw_decode берёт ПЕРВЫЙ валидный объект и игнорирует хвост —
+    # старый greedy-regex \{.*\} на дубле падал (склеивал оба объекта).
+    start = cleaned.find("{")
+    if start != -1:
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(cleaned[start:])
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+    logger.error("Failed to parse LLM JSON. Raw: %s", raw[:500])
+    raise LLMError("LLM returned non-JSON")
 
 
 class LLMService:
@@ -126,8 +145,8 @@ class LLMService:
         all_answers: List[Answer],
         round_summaries: List[str],
         client_date: str = "",
-    ) -> Tuple[List[ChecklistItem], LeadInsights]:
-        """Финальная агрегация: чеклист + аналитика лида (insights) одним вызовом."""
+    ) -> Tuple[List[ChecklistItem], LeadInsights, DealInfo]:
+        """Финальная агрегация: чеклист + аналитика лида + сделка одним вызовом."""
         user_payload = self._format_history(
             all_answers, round_summaries, client_date=client_date
         )
@@ -146,7 +165,8 @@ class LLMService:
         if not items:
             raise LLMError("LLM returned empty checklist")
         insights = _parse_insights(data.get("insights"))
-        return items, insights
+        deal = _parse_deal(data.get("deal"))
+        return items, insights, deal
 
     @staticmethod
     def _format_history(

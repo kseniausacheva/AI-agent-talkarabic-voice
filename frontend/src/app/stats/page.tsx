@@ -6,7 +6,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { apiMe, apiStats } from "@/lib/api";
-import type { StatsResponse } from "@/lib/types";
+import type { ObjectionCounts, StatsResponse } from "@/lib/types";
 
 export default function StatsPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -25,7 +25,28 @@ export default function StatsPage() {
           return;
         }
         const data = await apiStats();
-        if (!cancelled) setStats(data);
+        // Защита на время поэтапного деплоя: старый backend может не вернуть
+        // sales/objection_counts — подставляем дефолты, чтобы страница не падала.
+        if (!cancelled)
+          setStats({
+            ...data,
+            sales: data.sales ?? {
+              month: "",
+              closed_count: 0,
+              revenue: 0,
+              avg_check: null,
+              pending_count: 0,
+              pending_revenue: 0,
+              by_product: { individual: 0, course: 0, undecided: 0 },
+            },
+            objection_counts: data.objection_counts ?? {
+              price: 0,
+              time: 0,
+              tech: 0,
+              trust: 0,
+              other: 0,
+            },
+          });
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -45,13 +66,17 @@ export default function StatsPage() {
     ? Math.max(1, ...stats.skips_by_question.map((s) => s.count))
     : 1;
 
+  const maxObjection = stats
+    ? Math.max(1, ...Object.values(stats.objection_counts))
+    : 1;
+
   return (
     <AuthGuard>
       <MockBanner />
       <AppHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
-          <h1 className="text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] font-semibold tracking-[-0.03em] text-ink leading-tight mb-2">
+          <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-2">
             Статистика
           </h1>
           <p className="text-sm text-muted mb-10">
@@ -119,13 +144,108 @@ export default function StatsPage() {
               </div>
 
               <section className="mb-12">
-                <h2 className="text-base font-medium text-ink mb-4">
+                <h2 className="text-base font-semibold text-ink mb-1">
+                  Продажи за {monthLabel(stats.sales.month)}
+                </h2>
+                <p className="text-xs text-muted mb-4">
+                  Закрытые сделки (оплачено) за текущий месяц.
+                </p>
+                <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3 mb-px">
+                  <BigNumber
+                    label="Выручка"
+                    value={formatRub(stats.sales.revenue)}
+                  />
+                  <BigNumber
+                    label="Закрыто сделок"
+                    value={stats.sales.closed_count}
+                  />
+                  <BigNumber
+                    label="Средний чек"
+                    value={
+                      stats.sales.avg_check !== null
+                        ? formatRub(stats.sales.avg_check)
+                        : "—"
+                    }
+                  />
+                </div>
+                <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-2">
+                  <div className="bg-bg p-6 sm:p-7">
+                    <div className="text-sm text-ink mb-1">
+                      <span className="font-semibold tabular-nums">
+                        {stats.sales.pending_count}
+                      </span>{" "}
+                      сделок ждут оплаты на{" "}
+                      <span className="font-semibold tabular-nums">
+                        {formatRub(stats.sales.pending_revenue)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted">
+                      Потенциал: цена названа, оплата не подтверждена
+                    </div>
+                  </div>
+                  <div className="bg-bg p-6 sm:p-7">
+                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-1 text-sm text-ink">
+                      <span>
+                        Индивидуально{" "}
+                        <span className="font-semibold tabular-nums">
+                          {stats.sales.by_product.individual}
+                        </span>
+                      </span>
+                      <span>
+                        Курс · поток{" "}
+                        <span className="font-semibold tabular-nums">
+                          {stats.sales.by_product.course}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted">
+                      Закрытые сделки по продукту
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="mb-12">
+                <h2 className="text-base font-semibold text-ink mb-1">
+                  Что не получилось
+                </h2>
+                <p className="text-xs text-muted mb-4">
+                  Отказов:{" "}
+                  <span className="font-medium text-ink tabular-nums">
+                    {stats.stage_counts.rejected}
+                  </span>
+                  . Самые частые возражения клиентов — где терять меньше.
+                </p>
+                <div className="card p-5 space-y-2.5">
+                  {objectionRows(stats.objection_counts).map((o) => (
+                    <div key={o.key} className="flex items-center gap-3">
+                      <span className="w-20 shrink-0 text-xs text-muted">
+                        {o.label}
+                      </span>
+                      <div className="flex-1 h-2.5 rounded-full bg-surface-elev overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-accent transition-[width] duration-300"
+                          style={{
+                            width: `${(o.count / maxObjection) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="w-6 shrink-0 text-right text-xs tabular-nums text-ink">
+                        {o.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="mb-12">
+                <h2 className="text-base font-semibold text-ink mb-4">
                   По менеджерам
                 </h2>
-                <div className="overflow-x-auto rounded-xl border border-line">
+                <div className="card overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-line bg-surface text-left text-xs text-muted">
+                      <tr className="border-b border-line bg-surface text-left text-xs font-medium text-muted">
                         <th className="px-4 py-3 font-medium">Менеджер</th>
                         <th className="px-4 py-3 font-medium text-right">
                           За неделю
@@ -166,14 +286,14 @@ export default function StatsPage() {
               </section>
 
               <section className="mb-12">
-                <h2 className="text-base font-medium text-ink mb-1">
+                <h2 className="text-base font-semibold text-ink mb-1">
                   Какие вопросы пропускают
                 </h2>
                 <p className="text-xs text-muted mb-4">
                   Сколько раз менеджеры нажимали «Пропустить» — подсказка для
                   коучинга.
                 </p>
-                <div className="rounded-xl border border-line bg-surface p-5 space-y-2.5">
+                <div className="card p-5 space-y-2.5">
                   {stats.skips_by_question.map((s) => (
                     <div key={s.question_id} className="flex items-center gap-3">
                       <span className="flex-1 min-w-0 truncate text-xs text-muted">
@@ -194,10 +314,10 @@ export default function StatsPage() {
               </section>
 
               <section>
-                <h2 className="text-base font-medium text-ink mb-4">
+                <h2 className="text-base font-semibold text-ink mb-4">
                   Последние 14 дней
                 </h2>
-                <div className="rounded-xl border border-line bg-surface p-5 space-y-1.5">
+                <div className="card p-5 space-y-1.5">
                   {stats.by_day.map((d) => (
                     <div key={d.date} className="flex items-center gap-3">
                       <span className="w-20 shrink-0 font-mono text-xs text-muted tabular-nums">
@@ -231,10 +351,38 @@ const STAGES = [
   { key: "rejected", label: "отказ", chip: "bg-danger/10 text-danger" },
 ] as const;
 
+const MONTHS = [
+  "январь", "февраль", "март", "апрель", "май", "июнь",
+  "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+];
+
+function monthLabel(ym: string): string {
+  const [year, month] = ym.split("-");
+  return `${MONTHS[Number(month) - 1] ?? ym} ${year}`;
+}
+
+function formatRub(n: number): string {
+  return n.toLocaleString("ru-RU") + " ₽";
+}
+
+const OBJECTION_LABELS: Record<keyof ObjectionCounts, string> = {
+  price: "цена",
+  time: "время",
+  tech: "техника",
+  trust: "доверие",
+  other: "другое",
+};
+
+function objectionRows(counts: ObjectionCounts) {
+  return (Object.keys(OBJECTION_LABELS) as (keyof ObjectionCounts)[])
+    .map((key) => ({ key, label: OBJECTION_LABELS[key], count: counts[key] }))
+    .sort((a, b) => b.count - a.count);
+}
+
 function BigNumber({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="bg-bg p-6 sm:p-7">
-      <div className="text-4xl font-semibold tracking-[-0.03em] text-ink tabular-nums mb-1.5">
+      <div className="font-display mb-1.5 text-[2.5rem] leading-none tabular-nums text-ink">
         {value}
       </div>
       <div className="text-xs text-muted">{label}</div>

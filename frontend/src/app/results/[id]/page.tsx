@@ -8,9 +8,11 @@ import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { ChecklistPreview } from "@/components/ChecklistPreview";
+import { DealCard } from "@/components/DealCard";
 import { apiDownloadChecklist, apiGetResults } from "@/lib/api";
 import type {
   ChecklistItem,
+  DealInfo,
   LeadInsights,
   LeadStage,
   ObjectionType,
@@ -25,6 +27,7 @@ export default function ResultsPage({
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [markdown, setMarkdown] = useState<string>("");
   const [insights, setInsights] = useState<LeadInsights | null>(null);
+  const [deal, setDeal] = useState<DealInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"checklist" | "markdown">("checklist");
@@ -39,6 +42,7 @@ export default function ResultsPage({
         setItems(data.checklist);
         setMarkdown(data.markdown);
         setInsights(data.insights ?? null);
+        setDeal(data.deal ?? null);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -117,7 +121,7 @@ export default function ResultsPage({
                   <Check size={12} strokeWidth={3} />
                   Чеклист готов
                 </div>
-                <h1 className="text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] font-semibold tracking-[-0.03em] text-ink leading-tight mb-4">
+                <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-4">
                   Чеклист созвона с клиентом
                 </h1>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted">
@@ -139,6 +143,8 @@ export default function ResultsPage({
                 </div>
               </div>
 
+              <DealCard sessionId={id} initial={deal} />
+
               {insights && <LeadInsightsCard insights={insights} />}
 
               <div className="mb-8 flex items-center gap-2 border-b border-line">
@@ -158,7 +164,7 @@ export default function ResultsPage({
                   <button
                     type="button"
                     onClick={copyMarkdown}
-                    className="inline-flex items-center gap-2 h-9 px-3 rounded-md text-sm text-ink hover:bg-surface transition-colors"
+                    className="btn btn-ghost btn-sm"
                   >
                     {copied ? (
                       <>
@@ -175,7 +181,7 @@ export default function ResultsPage({
                   <button
                     type="button"
                     onClick={downloadMarkdown}
-                    className="inline-flex items-center gap-2 h-9 px-4 rounded-md bg-primary text-primary-ink text-sm font-medium hover:bg-primary-hover transition-colors"
+                    className="btn btn-primary btn-sm"
                   >
                     <Download size={14} />
                     Скачать .md
@@ -282,8 +288,8 @@ function LeadInsightsCard({ insights }: { insights: LeadInsights }) {
   }
 
   return (
-    <section className="mb-12 rounded-xl border border-line bg-surface p-6">
-      <h2 className="text-xs font-medium uppercase tracking-wider text-muted mb-5">
+    <section className="card mb-12 p-6">
+      <h2 className="mb-5 text-xs font-semibold uppercase tracking-wider text-muted">
         Аналитика лида
       </h2>
 
@@ -344,7 +350,7 @@ function LeadInsightsCard({ insights }: { insights: LeadInsights }) {
           <button
             type="button"
             onClick={copyDraft}
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-line-strong text-sm text-ink hover:bg-surface transition-colors"
+            className="btn btn-secondary btn-sm"
           >
             {copied ? (
               <>

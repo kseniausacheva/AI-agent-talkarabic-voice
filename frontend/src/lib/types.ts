@@ -46,6 +46,9 @@ export type ChecklistListItem = {
   stage: LeadStage | null;
   next_contact_date: string | null;
   completeness: number | null;
+  paid: boolean;
+  price: number | null;
+  product: ProductType | null;
 };
 
 export type ChecklistsResponse = {
@@ -79,6 +82,24 @@ export type StageCounts = {
   rejected: number;
 };
 
+export type ObjectionCounts = {
+  price: number;
+  time: number;
+  tech: number;
+  trust: number;
+  other: number;
+};
+
+export type SalesStats = {
+  month: string; // YYYY-MM
+  closed_count: number;
+  revenue: number;
+  avg_check: number | null;
+  pending_count: number;
+  pending_revenue: number;
+  by_product: { individual: number; course: number; undecided: number };
+};
+
 export type StatsResponse = {
   total_completed: number;
   completed_this_week: number;
@@ -88,6 +109,8 @@ export type StatsResponse = {
   skips_by_question: QuestionSkipStat[];
   avg_lead_score: number | null;
   stage_counts: StageCounts;
+  sales: SalesStats;
+  objection_counts: ObjectionCounts;
 };
 
 export type ChecklistStatus = "confirmed" | "needs_clarification" | "not_discussed";
@@ -142,11 +165,38 @@ export type LeadInsights = {
   tasks: LeadTask[];
 };
 
+/* ------------------------------ Сделка ------------------------------ */
+
+export type ProductType = "individual" | "course" | "undecided";
+
+export type DealInfo = {
+  product: ProductType | null;
+  product_note: string;
+  price: number | null;
+  currency: string;
+  installment: boolean;
+  planned_payment_date: string | null;
+  paid: boolean;
+  paid_date: string | null;
+};
+
+/** Частичное обновление сделки (PATCH) — только изменённые поля. */
+export type DealUpdate = Partial<{
+  product: ProductType | null;
+  product_note: string;
+  price: number | null;
+  installment: boolean;
+  planned_payment_date: string | null;
+  paid: boolean;
+  paid_date: string | null;
+}>;
+
 export type ResultsResponse = {
   session_id: string;
   checklist: ChecklistItem[];
   markdown: string;
   insights: LeadInsights | null;
+  deal: DealInfo | null;
 };
 
 export type RecorderState =

@@ -3,6 +3,7 @@ import { ArrowRight, ListChecks, Mic, FileDown } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
+import { HeroCanvas } from "@/components/HeroCanvas";
 
 export default function LandingPage() {
   return (
@@ -10,78 +11,94 @@ export default function LandingPage() {
       <MockBanner />
       <AppHeader />
       <main className="flex-1">
-        <div className="mx-auto max-w-5xl px-6 py-20 sm:py-28">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 text-xs font-medium text-muted mb-8">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              Внутренний инструмент · Школа арабского
-            </div>
-            <h1 className="text-balance text-[clamp(2.25rem,1.8rem+2.2vw,3.5rem)] font-semibold leading-[1.05] tracking-[-0.04em] text-ink">
-              Чеклист клиента <span className="text-primary">за 7 минут.</span> После звонка или переписки.
-            </h1>
-            <p className="mt-6 text-lg text-muted leading-relaxed max-w-prose text-pretty">
-              Менеджер только что закончил разговор с клиентом в Telegram, WhatsApp
-              или по телефону. Открывает этот инструмент, наговаривает голосом
-              ответы на 10 ключевых вопросов про клиента, и получает готовый
-              <code className="font-mono text-sm mx-1">.md</code> с категоризацией
-              — для CRM и команды.
-            </p>
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              <Link
-                href="/session"
-                className="inline-flex items-center gap-2 h-14 px-7 rounded-full bg-primary text-primary-ink font-medium hover:bg-primary-hover transition-colors"
-              >
-                Новый клиент — начать
-                <ArrowRight size={18} />
-              </Link>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 h-14 px-7 rounded-full border border-line-strong bg-surface text-ink font-medium hover:bg-surface-elev transition-colors"
-              >
-                Мои чеклисты
-              </Link>
-              <span className="text-sm text-muted">
-                10 вопросов · 3 раунда · ~7 минут
-              </span>
+        {/* Hero */}
+        <section className="relative overflow-hidden">
+          <HeroCanvas />
+          {/* мягкая радиальная подложка под заголовком для читаемости */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(60% 55% at 30% 40%, rgba(255,255,255,0.92), rgba(255,255,255,0.4) 70%, transparent)",
+            }}
+          />
+          <div className="relative mx-auto max-w-5xl px-6 py-24 sm:py-32">
+            <div className="max-w-2xl animate-fade-up">
+              <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-line bg-bg/70 px-3.5 py-1.5 text-xs font-medium text-teal shadow-xs backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                Внутренний инструмент · Школа арабского
+              </div>
+              <h1 className="font-display text-balance text-[clamp(2.5rem,1.9rem+3vw,4.5rem)] leading-[1.02] tracking-[-0.02em] text-ink">
+                Чеклист клиента{" "}
+                <span className="text-primary-strong">за 7 минут.</span>
+                <br className="hidden sm:block" /> После звонка или переписки.
+              </h1>
+              <p className="mt-6 max-w-prose text-pretty text-lg leading-relaxed text-muted">
+                Закончили разговор с клиентом в Telegram, WhatsApp или по телефону —
+                наговорите голосом ответы на 10 ключевых вопросов и получите готовый{" "}
+                <code className="mx-0.5 rounded bg-surface px-1.5 py-0.5 font-mono text-sm text-ink">
+                  .md
+                </code>{" "}
+                с аналитикой лида и сделкой для CRM.
+              </p>
+              <div className="mt-10 flex flex-wrap items-center gap-4">
+                <Link href="/session" className="btn btn-primary btn-lg">
+                  Новый клиент — начать
+                  <ArrowRight size={18} />
+                </Link>
+                <Link href="/dashboard" className="btn btn-secondary btn-lg">
+                  Мои чеклисты
+                </Link>
+                <span className="text-sm text-muted">
+                  10 вопросов · 3 раунда · ~7 минут
+                </span>
+              </div>
             </div>
           </div>
+        </section>
 
-          <div className="mt-24 grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3">
+        {/* Как это работает — реальная последовательность из 3 шагов */}
+        <section className="mx-auto max-w-5xl px-6 pb-8">
+          <div className="grid gap-4 stagger sm:grid-cols-3">
             <Step
-              n="1"
+              n="01"
               icon={Mic}
               title="Наговариваете ответы"
-              body="После общения с клиентом — открываете и наговариваете ответы голосом. Whisper транскрибирует."
+              body="После общения с клиентом открываете и наговариваете итоги голосом. Локальный Whisper транскрибирует речь."
             />
             <Step
-              n="2"
+              n="02"
               icon={ListChecks}
               title="Агент структурирует"
-              body="MiniMax M3 разбирает по категориям: контакт, мотивация, уровень, формат, бюджет, следующие шаги."
+              body="MiniMax M3 раскладывает по категориям, оценивает лида и заполняет сделку: продукт, стоимость, оплата."
             />
             <Step
-              n="3"
+              n="03"
               icon={FileDown}
-              title="Скачиваете .md"
-              body="Готовый Markdown — кидаете в CRM, в Telegram-чат команды или в карточку клиента в Notion."
+              title="Готовый итог"
+              body="Markdown в CRM или чат команды, аналитика на дашборде, продажи за месяц — в статистике."
             />
           </div>
+        </section>
 
-          <div className="mt-24 flex items-baseline justify-between border-t border-line pt-8">
+        {/* Footer */}
+        <section className="mx-auto max-w-5xl px-6 py-16">
+          <div className="flex flex-wrap items-baseline justify-between gap-3 border-t border-line pt-8">
             <p className="text-sm text-muted">
-              Хочешь посмотреть пример готового чеклиста? —{" "}
+              Посмотреть пример готового чеклиста —{" "}
               <Link
                 href="/results/demo-abc123"
-                className="text-accent hover:underline underline-offset-4 font-medium"
+                className="font-medium text-primary-strong underline-offset-4 hover:underline"
               >
                 демо клиента Анны
               </Link>
             </p>
-            <p className="text-xs text-subtle font-mono tabular-nums">
-              talkarabic-internal / v0.2
+            <p className="font-mono text-xs tabular-nums text-subtle">
+              talkarabic-internal
             </p>
           </div>
-        </div>
+        </section>
       </main>
     </AuthGuard>
   );
@@ -99,15 +116,17 @@ function Step({
   body: string;
 }) {
   return (
-    <div className="bg-bg p-7 sm:p-8">
-      <div className="flex items-center gap-3 mb-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-elev text-primary">
-          <Icon size={18} />
+    <div className="card group p-7 transition-shadow duration-300 hover:shadow-md">
+      <div className="mb-5 flex items-center justify-between">
+        <span className="grid h-11 w-11 place-items-center rounded-xl bg-tint text-primary-strong transition-transform duration-300 group-hover:-translate-y-0.5">
+          <Icon size={20} />
         </span>
-        <span className="text-xs font-mono text-subtle tabular-nums">{n}</span>
+        <span className="font-display text-lg tabular-nums text-line-strong">
+          {n}
+        </span>
       </div>
-      <h2 className="text-[0.95rem] font-medium text-ink mb-2">{title}</h2>
-      <p className="text-sm text-muted leading-relaxed text-pretty">{body}</p>
+      <h2 className="mb-2 text-[1.05rem] font-semibold text-ink">{title}</h2>
+      <p className="text-pretty text-sm leading-relaxed text-muted">{body}</p>
     </div>
   );
 }

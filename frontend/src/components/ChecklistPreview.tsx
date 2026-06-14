@@ -39,9 +39,9 @@ export function ChecklistPreview({ items }: Props) {
     <div className="space-y-10">
       {Object.entries(grouped).map(([category, group]) => (
         <section key={category}>
-          <h3 className="text-base font-medium text-ink mb-4 flex items-baseline gap-3">
+          <h3 className="mb-4 flex items-baseline gap-3 text-base font-semibold text-ink">
             {category}
-            <span className="text-xs text-muted tabular-nums font-normal">
+            <span className="text-xs font-normal tabular-nums text-muted">
               {group.filter((i) => i.status === "confirmed").length}/{group.length}
             </span>
           </h3>
@@ -66,9 +66,9 @@ export function ChecklistPreview({ items }: Props) {
                   <div className="flex-1 min-w-0">
                     <p
                       className={cn(
-                        "text-[0.95rem] leading-relaxed text-pretty",
+                        "text-pretty text-[0.95rem] leading-relaxed",
                         item.status === "not_discussed"
-                          ? "text-subtle"
+                          ? "text-muted"
                           : "text-ink",
                       )}
                     >

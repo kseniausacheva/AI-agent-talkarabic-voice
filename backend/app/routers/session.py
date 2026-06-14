@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Manager, get_session as get_db_session
+from app.models.checklist import DealInfo
 from app.models.session import (
+    DealUpdate,
     ResultsResponse,
     StartSessionResponse,
     SubmitRoundResponse,
@@ -192,7 +194,32 @@ async def get_results(
         client_name=state.client_name,
         client_date=state.client_date,
         insights=state.insights,
+        deal=state.deal,
     )
+
+
+@router.patch("/{session_id}/deal", response_model=DealInfo)
+async def update_deal(
+    session_id: Annotated[str, Path()],
+    payload: DealUpdate,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Ручное обновление сделки менеджером (продукт, стоимость, оплата).
+    Приходят только изменённые поля. paid=true без даты ⇒ дата оплаты = сегодня."""
+    session_manager = get_session_manager()
+    try:
+        deal = await session_manager.update_deal(
+            db, session_id, manager, payload.model_dump(exclude_unset=True)
+        )
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception as exc:
+        logger.exception("update_deal failed")
+        raise HTTPException(status_code=500, detail=f"Deal update failed: {exc}")
+    return deal
 
 
 @router.get("/{session_id}/download")

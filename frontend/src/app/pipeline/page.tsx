@@ -49,7 +49,7 @@ export default function PipelinePage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await apiChecklists({ status: "completed", perPage: 200 });
+      const res = await apiChecklists({ status: "completed", perPage: 100 });
       setItems(res.items);
     } catch (e) {
       setError((e as Error).message);

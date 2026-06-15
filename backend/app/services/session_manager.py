@@ -309,6 +309,100 @@ class SessionManager:
             await db.commit()
             return deal
 
+    async def create_from_text(
+        self,
+        db: AsyncSession,
+        manager: Manager,
+        client_name: str,
+        client_date: str,
+        conversation: str,
+    ) -> str:
+        """Создаёт ГОТОВЫЙ чеклист из вставленной переписки (без 10 вопросов):
+        ИИ разбирает диалог → items + insights + сделка, сохраняем как completed.
+        Возвращает session_id."""
+        from app.services.file_generator import generate_markdown
+        from app.services.llm import get_llm_service
+
+        llm = get_llm_service()
+        items, insights, deal = await asyncio.to_thread(
+            llm.analyze_conversation, conversation, client_date
+        )
+
+        session_id = uuid.uuid4().hex[:12]
+        markdown = generate_markdown(session_id, items, deal=deal)
+        # Сохраняем саму переписку как один «ответ» — для прослеживаемости.
+        source = Answer(
+            question_id="pasted_conversation",
+            question_text="Вставленная переписка",
+            audio_transcript=conversation.strip(),
+            round_number=1,
+            skipped=False,
+        )
+        now = _utc_now_iso()
+        row = Checklist(
+            id=session_id,
+            manager_id=manager.id,
+            client_name=client_name,
+            client_date=client_date,
+            status="completed",
+            created_at=now,
+            completed_at=now,
+            answers_json=json.dumps([source.model_dump()], ensure_ascii=False),
+            summaries_json="[]",
+            checklist_json=json.dumps(
+                [i.model_dump() for i in items], ensure_ascii=False
+            ),
+            markdown=markdown,
+            insights_json=json.dumps(insights.model_dump(), ensure_ascii=False),
+            deal_json=json.dumps(deal.model_dump(), ensure_ascii=False),
+            completeness=_completeness(items),
+        )
+        db.add(row)
+        await db.commit()
+        logger.info(
+            "Created checklist %s from pasted conversation (manager_id=%d)",
+            session_id,
+            manager.id,
+        )
+        return session_id
+
+    async def update_funnel(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        manager: Manager,
+        column: str,
+    ) -> Dict:
+        """Перемещение карточки в воронке. column: new|warm|hot|rejected|paid.
+        "paid" → сделка оплачена (закрыта); стадия → insights.stage (и снимаем
+        оплату). Возвращает {stage, paid}. Доступ: владелец/admin."""
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+
+            insights = _parse_insights_json(row.insights_json) or LeadInsights()
+            deal = _parse_deal_json(row.deal_json) or DealInfo()
+
+            if column == "paid":
+                deal.paid = True
+                if not deal.paid_date:
+                    deal.paid_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            else:
+                insights.stage = column  # one of new|warm|hot|rejected
+                deal.paid = False
+                deal.paid_date = None
+
+            row.insights_json = json.dumps(insights.model_dump(), ensure_ascii=False)
+            row.deal_json = json.dumps(deal.model_dump(), ensure_ascii=False)
+            if row.checklist_json:
+                from app.services.file_generator import generate_markdown
+
+                items = [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
+                row.markdown = generate_markdown(row.id, items, deal=deal)
+
+            await db.commit()
+            return {"stage": insights.stage, "paid": deal.paid}
+
 
 _instance: Optional[SessionManager] = None
 

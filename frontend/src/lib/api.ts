@@ -1,5 +1,6 @@
 import { authHeaders, clearToken } from "./auth";
 import {
+  MOCK_DEMO_SESSION_ID,
   MOCK_MANAGER,
   MOCK_MARKDOWN,
   MOCK_TOKEN,
@@ -17,6 +18,8 @@ import type {
   ChecklistsResponse,
   DealInfo,
   DealUpdate,
+  FunnelColumn,
+  LeadStage,
   Manager,
   ResultsResponse,
   SessionStartResponse,
@@ -139,6 +142,22 @@ export async function apiMe(): Promise<Manager> {
   return res.json();
 }
 
+/** Привязать/отвязать Telegram chat_id (null = отвязать). */
+export async function apiSetTelegram(
+  chatId: string | null,
+): Promise<Manager> {
+  if (USE_MOCK) {
+    await wait(300);
+    return { ...MOCK_MANAGER, telegram_chat_id: chatId };
+  }
+  const res = await request("/api/auth/telegram", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ telegram_chat_id: chatId }),
+  });
+  return res.json();
+}
+
 /* ---------------------------- Session ---------------------------- */
 
 export async function apiStartSession(
@@ -188,6 +207,31 @@ export async function apiSubmitRound(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ answers }),
+  });
+  return res.json();
+}
+
+/**
+ * Анализ вставленной переписки: ИИ строит готовый чеклист сразу.
+ * Возвращает session_id → ведём на /results.
+ */
+export async function apiAnalyzeText(
+  clientName: string,
+  clientDate: string,
+  conversation: string,
+): Promise<{ session_id: string }> {
+  if (USE_MOCK) {
+    await wait(1600);
+    return { session_id: MOCK_DEMO_SESSION_ID };
+  }
+  const res = await request("/api/session/from-text", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_name: clientName,
+      client_date: clientDate,
+      conversation,
+    }),
   });
   return res.json();
 }
@@ -254,8 +298,9 @@ export async function apiChecklists(opts: {
   perPage?: number;
   /** due=today — completed-записи с next_contact_date <= сегодня (спека §4). */
   due?: "today";
+  status?: "in_progress" | "completed";
 }): Promise<ChecklistsResponse> {
-  const { q = "", page = 1, perPage = 20, due } = opts;
+  const { q = "", page = 1, perPage = 20, due, status } = opts;
   if (USE_MOCK) {
     await wait(400);
     return mockChecklists(q, page, perPage, due);
@@ -266,7 +311,28 @@ export async function apiChecklists(opts: {
   });
   if (q.trim()) params.set("q", q.trim());
   if (due) params.set("due", due);
+  if (status) params.set("status", status);
   const res = await request(`/api/checklists?${params.toString()}`);
+  return res.json();
+}
+
+/** Перемещение карточки в воронке (канбан): меняет стадию или отмечает оплату. */
+export async function apiUpdateFunnel(
+  sessionId: string,
+  column: FunnelColumn,
+): Promise<{ stage: LeadStage | null; paid: boolean }> {
+  if (USE_MOCK) {
+    await wait(200);
+    return {
+      stage: column === "paid" ? null : (column as LeadStage),
+      paid: column === "paid",
+    };
+  }
+  const res = await request(`/api/session/${sessionId}/funnel`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ column }),
+  });
   return res.json();
 }
 

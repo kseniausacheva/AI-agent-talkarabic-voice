@@ -3,7 +3,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
@@ -83,6 +83,43 @@ class StartSessionRequest(BaseModel):
         return value
 
 
+class FromTextRequest(BaseModel):
+    """Создание чеклиста из вставленной переписки (без 10 вопросов)."""
+
+    client_name: str = Field(min_length=1, max_length=100)
+    client_date: Optional[str] = None
+    conversation: str = Field(min_length=20, max_length=20000)
+
+    @field_validator("client_name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("client_name не может быть пустым")
+        return value
+
+    @field_validator("conversation")
+    @classmethod
+    def _strip_conversation(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 20:
+            raise ValueError("Переписка слишком короткая для анализа")
+        return value
+
+    @field_validator("client_date")
+    @classmethod
+    def _validate_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        if not _DATE_RE.fullmatch(value):
+            raise ValueError("client_date должен быть в формате YYYY-MM-DD")
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("client_date — несуществующая дата")
+        return value
+
+
 @router.post("/start", response_model=StartSessionResponse)
 async def start_session(
     payload: StartSessionRequest,
@@ -108,6 +145,32 @@ async def start_session(
         client_name=state.client_name,
         client_date=state.client_date,
     )
+
+
+@router.post("/from-text")
+async def create_from_text(
+    payload: FromTextRequest,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Готовый чеклист из вставленной переписки — ИИ разбирает диалог сразу,
+    без 10 вопросов. Возвращает {session_id} → фронт ведёт на /results."""
+    client_date = payload.client_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    session_manager = get_session_manager()
+    try:
+        session_id = await session_manager.create_from_text(
+            db,
+            manager=manager,
+            client_name=payload.client_name,
+            client_date=client_date,
+            conversation=payload.conversation,
+        )
+    except Exception as exc:
+        logger.exception("create_from_text failed")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+    # fire-and-forget: синк в Google Sheets, ошибки не ломают ответ
+    asyncio.create_task(sync_checklist_to_sheets(session_id))
+    return {"session_id": session_id}
 
 
 @router.post("/transcribe", response_model=TranscribeResponse)
@@ -196,6 +259,34 @@ async def get_results(
         insights=state.insights,
         deal=state.deal,
     )
+
+
+class FunnelUpdate(BaseModel):
+    column: Literal["new", "warm", "hot", "rejected", "paid"]
+
+
+@router.patch("/{session_id}/funnel")
+async def update_funnel(
+    session_id: Annotated[str, Path()],
+    payload: FunnelUpdate,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Перемещение карточки в воронке (канбан): меняет стадию лида или
+    отмечает сделку оплаченной. column ∈ new|warm|hot|rejected|paid."""
+    session_manager = get_session_manager()
+    try:
+        result = await session_manager.update_funnel(
+            db, session_id, manager, payload.column
+        )
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception as exc:
+        logger.exception("update_funnel failed")
+        raise HTTPException(status_code=500, detail=f"Funnel update failed: {exc}")
+    return result
 
 
 @router.patch("/{session_id}/deal", response_model=DealInfo)

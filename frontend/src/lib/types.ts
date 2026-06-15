@@ -25,6 +25,7 @@ export type Manager = {
   username: string;
   display_name: string;
   role: ManagerRole;
+  telegram_chat_id?: string | null;
 };
 
 export type AuthResponse = {
@@ -154,6 +155,9 @@ export type LeadTask = {
 };
 
 export type LeadStage = "new" | "warm" | "hot" | "rejected";
+
+/** Колонка воронки (канбан): стадии лида + «оплачено». */
+export type FunnelColumn = "new" | "warm" | "hot" | "rejected" | "paid";
 
 export type LeadInsights = {
   lead_score: number | null;

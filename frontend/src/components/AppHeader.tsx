@@ -60,18 +60,22 @@ export function AppHeader() {
             <HeaderLink href="/dashboard" active={pathname === "/dashboard"}>
               Дашборд
             </HeaderLink>
+            <HeaderLink href="/pipeline" active={pathname === "/pipeline"}>
+              Воронка
+            </HeaderLink>
             {manager?.role === "admin" && (
               <HeaderLink href="/stats" active={pathname === "/stats"}>
                 Статистика
               </HeaderLink>
             )}
             {manager && (
-              <span
-                className="ml-1 hidden max-w-[10rem] truncate text-xs text-muted sm:ml-3 sm:inline"
-                title={manager.display_name}
+              <Link
+                href="/settings"
+                className="ml-1 hidden max-w-[10rem] truncate rounded-full px-2.5 py-1 text-xs text-muted transition-colors hover:bg-surface hover:text-ink sm:ml-2 sm:inline"
+                title="Настройки"
               >
                 {manager.display_name}
-              </span>
+              </Link>
             )}
             <button
               type="button"

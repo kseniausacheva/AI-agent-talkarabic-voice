@@ -9,7 +9,7 @@ import { FormField } from "@/components/FormField";
 import { MockBanner } from "@/components/MockBanner";
 import { QuestionCard } from "@/components/QuestionCard";
 import { RoundIndicator } from "@/components/RoundIndicator";
-import { apiStartSession, apiSubmitRound } from "@/lib/api";
+import { apiAnalyzeText, apiStartSession, apiSubmitRound } from "@/lib/api";
 import type { AnswerPayload, Question } from "@/lib/types";
 
 type ScreenState = "setup" | "starting" | "answering" | "submitting" | "completed";
@@ -50,6 +50,8 @@ function todayLocalISO(): string {
 export default function SessionPage() {
   const router = useRouter();
   const [screen, setScreen] = useState<ScreenState>("setup");
+  const [mode, setMode] = useState<"questions" | "paste">("questions");
+  const [conversation, setConversation] = useState("");
   const [clientName, setClientName] = useState("");
   const [clientDate, setClientDate] = useState(todayLocalISO());
   const [sessionId, setSessionId] = useState<string>("");
@@ -73,6 +75,31 @@ export default function SessionPage() {
       setRound(data.round as 1);
       setQuestions(data.questions);
       setScreen("answering");
+    } catch (e) {
+      setError((e as Error).message);
+      setScreen("setup");
+    }
+  }
+
+  async function analyzeText(e: React.FormEvent) {
+    e.preventDefault();
+    if (!clientName.trim()) {
+      setError("Введите имя клиента.");
+      return;
+    }
+    if (conversation.trim().length < 20) {
+      setError("Вставьте переписку — хотя бы пару реплик.");
+      return;
+    }
+    setScreen("starting");
+    setError(null);
+    try {
+      const { session_id } = await apiAnalyzeText(
+        clientName.trim(),
+        clientDate,
+        conversation.trim(),
+      );
+      router.push(`/results/${session_id}`);
     } catch (e) {
       setError((e as Error).message);
       setScreen("setup");
@@ -135,16 +162,53 @@ export default function SessionPage() {
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-6 py-10 sm:py-14">
           {(screen === "setup" || screen === "starting") && (
-            <div className="max-w-md">
+            <div className="max-w-lg">
               <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-3">
                 Новый клиент
               </h1>
-              <p className="text-muted text-[0.95rem] mb-10 text-pretty">
-                Укажите, о ком этот чеклист. Дальше — 10 вопросов в 3 раунда,
-                голосом или текстом.
+              <p className="text-muted text-[0.95rem] mb-6 text-pretty">
+                Укажите, о ком этот чеклист, и выберите способ ввода.
               </p>
 
-              <form onSubmit={startSession} className="space-y-4" noValidate>
+              {/* Способ: 10 вопросов голосом/текстом ИЛИ вставить готовую переписку */}
+              <div
+                className="mb-8 inline-flex rounded-lg border border-line-strong bg-bg p-0.5"
+                role="tablist"
+                aria-label="Способ ввода"
+              >
+                {(
+                  [
+                    ["questions", "По вопросам"],
+                    ["paste", "Вставить переписку"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={mode === key}
+                    onClick={() => {
+                      setMode(key);
+                      setError(null);
+                    }}
+                    disabled={screen === "starting"}
+                    className={
+                      "h-9 rounded-md px-4 text-sm font-medium transition-colors " +
+                      (mode === key
+                        ? "bg-primary-strong text-white shadow-sm"
+                        : "text-muted hover:text-ink")
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <form
+                onSubmit={mode === "paste" ? analyzeText : startSession}
+                className="space-y-4"
+                noValidate
+              >
                 <FormField
                   label="Имя клиента"
                   name="client_name"
@@ -154,7 +218,7 @@ export default function SessionPage() {
                   required
                 />
                 <label className="block">
-                  <span className="block text-xs text-muted mb-1.5">
+                  <span className="mb-1.5 block text-xs font-medium text-muted">
                     Дата контакта
                   </span>
                   <input
@@ -166,6 +230,25 @@ export default function SessionPage() {
                   />
                 </label>
 
+                {mode === "paste" && (
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-muted">
+                      Переписка с клиентом
+                    </span>
+                    <textarea
+                      value={conversation}
+                      onChange={(e) => setConversation(e.target.value)}
+                      rows={10}
+                      placeholder="Вставьте сюда диалог из Instagram, WhatsApp или Telegram — целиком, как есть…"
+                      className="w-full resize-y rounded-xl border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
+                    />
+                    <span className="mt-1.5 block text-xs text-muted">
+                      ИИ разберёт диалог и сам соберёт чеклист, сделку и аналитику —
+                      без 10 вопросов.
+                    </span>
+                  </label>
+                )}
+
                 {error && (
                   <p className="text-sm text-danger" role="alert">
                     {error}
@@ -174,13 +257,24 @@ export default function SessionPage() {
 
                 <button
                   type="submit"
-                  disabled={screen === "starting" || !clientName.trim()}
+                  disabled={
+                    screen === "starting" ||
+                    !clientName.trim() ||
+                    (mode === "paste" && conversation.trim().length < 20)
+                  }
                   className="btn btn-primary"
                 >
                   {screen === "starting" ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      Готовим вопросы…
+                      {mode === "paste"
+                        ? "Анализирую переписку…"
+                        : "Готовим вопросы…"}
+                    </>
+                  ) : mode === "paste" ? (
+                    <>
+                      Сформировать чеклист
+                      <ArrowRight size={16} />
                     </>
                   ) : (
                     <>

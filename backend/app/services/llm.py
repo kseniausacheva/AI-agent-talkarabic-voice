@@ -76,6 +76,22 @@ def _parse_deal(raw: Any) -> DealInfo:
         return DealInfo()
 
 
+def _build_checklist_result(
+    data: Dict[str, Any],
+) -> Tuple[List[ChecklistItem], LeadInsights, DealInfo]:
+    """JSON от LLM → (items, insights, deal). Общий разбор для генерации по
+    вопросам и для анализа переписки. Пустой чеклист → LLMError."""
+    items: List[ChecklistItem] = []
+    for item in data.get("items", []):
+        try:
+            items.append(ChecklistItem(**item))
+        except Exception as exc:
+            logger.warning("Skipping malformed checklist item %s: %s", item, exc)
+    if not items:
+        raise LLMError("LLM returned empty checklist")
+    return items, _parse_insights(data.get("insights")), _parse_deal(data.get("deal"))
+
+
 def _parse_json(raw: str) -> Dict[str, Any]:
     cleaned = _strip_markdown_json(raw)
     try:
@@ -155,18 +171,28 @@ class LLMService:
             user=user_payload,
             temperature=0.3,
         )
-        items_raw = data.get("items", [])
-        items: List[ChecklistItem] = []
-        for item in items_raw:
-            try:
-                items.append(ChecklistItem(**item))
-            except Exception as exc:
-                logger.warning("Skipping malformed checklist item %s: %s", item, exc)
-        if not items:
-            raise LLMError("LLM returned empty checklist")
-        insights = _parse_insights(data.get("insights"))
-        deal = _parse_deal(data.get("deal"))
-        return items, insights, deal
+        return _build_checklist_result(data)
+
+    def analyze_conversation(
+        self,
+        conversation: str,
+        client_date: str = "",
+    ) -> Tuple[List[ChecklistItem], LeadInsights, DealInfo]:
+        """Разбор сырой переписки из мессенджера в чеклист + insights + сделку
+        (одним вызовом, без 10 вопросов и голоса)."""
+        lines: List[str] = []
+        if client_date:
+            lines.append(f"Дата контакта: {client_date}")
+            lines.append("")
+        lines.append("Переписка менеджера с клиентом:")
+        lines.append("")
+        lines.append(conversation.strip())
+        data = self._chat_json(
+            system=prompts.SYSTEM_ANALYZE_CONVERSATION,
+            user="\n".join(lines),
+            temperature=0.3,
+        )
+        return _build_checklist_result(data)
 
     @staticmethod
     def _format_history(

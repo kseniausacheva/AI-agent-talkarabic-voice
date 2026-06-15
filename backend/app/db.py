@@ -42,6 +42,8 @@ class Manager(Base):
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="manager")
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Telegram chat_id для уведомлений «сегодня связаться» (None = не привязан)
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
 
 class Checklist(Base):
@@ -78,11 +80,14 @@ class Checklist(Base):
     deal_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
-# Миграции checklists: колонка → DDL (добавляется, если PRAGMA её не видит)
+# Миграции: колонка → DDL (добавляется, если PRAGMA её не видит)
 _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",
     "completeness": "ALTER TABLE checklists ADD COLUMN completeness INTEGER",
     "deal_json": "ALTER TABLE checklists ADD COLUMN deal_json TEXT",
+}
+_MANAGER_MIGRATIONS = {
+    "telegram_chat_id": "ALTER TABLE managers ADD COLUMN telegram_chat_id TEXT",
 }
 
 
@@ -122,12 +127,16 @@ async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        result = await conn.exec_driver_sql("PRAGMA table_info(checklists)")
-        existing_columns = {row[1] for row in result.fetchall()}
-        for column, ddl in _CHECKLIST_MIGRATIONS.items():
-            if column not in existing_columns:
-                await conn.exec_driver_sql(ddl)
-                logger.info("Migration: added column checklists.%s", column)
+        for table, migrations in (
+            ("checklists", _CHECKLIST_MIGRATIONS),
+            ("managers", _MANAGER_MIGRATIONS),
+        ):
+            result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+            existing_columns = {row[1] for row in result.fetchall()}
+            for column, ddl in migrations.items():
+                if column not in existing_columns:
+                    await conn.exec_driver_sql(ddl)
+                    logger.info("Migration: added column %s.%s", table, column)
     logger.info("Database ready: %s", db_path)
 
 

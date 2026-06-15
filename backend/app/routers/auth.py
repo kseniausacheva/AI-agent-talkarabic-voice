@@ -6,6 +6,7 @@ ADMIN_INVITE_CODE → роль admin. Неверный код — 403.
 import logging
 import re
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -33,6 +34,25 @@ class ManagerOut(BaseModel):
     username: str
     display_name: str
     role: str
+    telegram_chat_id: Optional[str] = None
+
+
+class TelegramLink(BaseModel):
+    """Привязка Telegram: chat_id (цифры, можно с минусом) или пусто для отвязки."""
+
+    telegram_chat_id: Optional[str] = None
+
+    @field_validator("telegram_chat_id")
+    @classmethod
+    def _validate_chat_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if value == "":
+            return None
+        if not re.fullmatch(r"-?\d{4,20}", value):
+            raise ValueError("chat_id должен быть числом (получите его у @userinfobot)")
+        return value
 
 
 class AuthResponse(BaseModel):
@@ -66,6 +86,7 @@ def _manager_out(manager: Manager) -> ManagerOut:
         username=manager.username,
         display_name=manager.display_name,
         role=manager.role,
+        telegram_chat_id=manager.telegram_chat_id,
     )
 
 
@@ -125,3 +146,19 @@ async def login(
 async def me(manager: Manager = Depends(get_current_manager)) -> ManagerOut:
     """Текущий менеджер по Bearer-токену."""
     return _manager_out(manager)
+
+
+@router.patch("/telegram", response_model=ManagerOut)
+async def set_telegram(
+    payload: TelegramLink,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_session),
+) -> ManagerOut:
+    """Привязать/отвязать Telegram chat_id для уведомлений «сегодня связаться»."""
+    row = await db.get(Manager, manager.id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    row.telegram_chat_id = payload.telegram_chat_id
+    await db.commit()
+    await db.refresh(row)
+    return _manager_out(row)

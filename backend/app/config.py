@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     )
     gsheets_secret: str = Field(default="")
 
+    # Telegram-уведомления «сегодня связаться»
+    telegram_bot_token: str = Field(
+        default="", description="Токен бота от @BotFather (пусто = выключено)"
+    )
+    cron_secret: str = Field(
+        default="", description="Секрет для POST /api/cron/* (пусто = cron выключен)"
+    )
+
     # CORS
     allowed_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000"

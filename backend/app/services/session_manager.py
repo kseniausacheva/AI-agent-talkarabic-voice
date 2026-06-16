@@ -169,6 +169,7 @@ class SessionManager:
         session_id: str,
         answers_texts: List[Dict],
         manager: Manager,
+        conversation: str = "",
     ) -> Tuple[SessionState, bool]:
         """Принимает ответы раунда, гоняет граф, сохраняет результат в БД.
 
@@ -215,6 +216,7 @@ class SessionManager:
                 "current_questions": state.current_questions,
                 "all_answers": state.all_answers,
                 "round_summaries": state.round_summaries,
+                "conversation": conversation,
                 "checklist_items": state.checklist_items,
                 "is_complete": state.is_complete,
             }

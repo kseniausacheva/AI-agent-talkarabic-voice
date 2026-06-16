@@ -2,14 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, ImageUp, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { FormField } from "@/components/FormField";
 import { MockBanner } from "@/components/MockBanner";
 import { QuestionCard } from "@/components/QuestionCard";
 import { RoundIndicator } from "@/components/RoundIndicator";
-import { apiAnalyzeText, apiStartSession, apiSubmitRound } from "@/lib/api";
+import {
+  apiAnalyzeText,
+  apiExtractScreenshots,
+  apiStartSession,
+  apiSubmitRound,
+} from "@/lib/api";
 import type { AnswerPayload, Question } from "@/lib/types";
 
 type ScreenState = "setup" | "starting" | "answering" | "submitting" | "completed";
@@ -50,8 +55,9 @@ function todayLocalISO(): string {
 export default function SessionPage() {
   const router = useRouter();
   const [screen, setScreen] = useState<ScreenState>("setup");
-  const [mode, setMode] = useState<"questions" | "paste">("questions");
   const [conversation, setConversation] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [pending, setPending] = useState<null | "questions" | "paste">(null);
   const [clientName, setClientName] = useState("");
   const [clientDate, setClientDate] = useState(todayLocalISO());
   const [sessionId, setSessionId] = useState<string>("");
@@ -67,6 +73,7 @@ export default function SessionPage() {
       setError("Введите имя клиента.");
       return;
     }
+    setPending("questions");
     setScreen("starting");
     setError(null);
     try {
@@ -78,19 +85,21 @@ export default function SessionPage() {
     } catch (e) {
       setError((e as Error).message);
       setScreen("setup");
+      setPending(null);
     }
   }
 
-  async function analyzeText(e: React.FormEvent) {
-    e.preventDefault();
+  async function analyzeText(e?: React.SyntheticEvent) {
+    e?.preventDefault();
     if (!clientName.trim()) {
       setError("Введите имя клиента.");
       return;
     }
     if (conversation.trim().length < 20) {
-      setError("Вставьте переписку — хотя бы пару реплик.");
+      setError("Вставьте переписку или загрузите скриншоты — хотя бы пару реплик.");
       return;
     }
+    setPending("paste");
     setScreen("starting");
     setError(null);
     try {
@@ -103,6 +112,23 @@ export default function SessionPage() {
     } catch (e) {
       setError((e as Error).message);
       setScreen("setup");
+      setPending(null);
+    }
+  }
+
+  async function onScreenshots(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ""; // сброс, чтобы тот же файл можно было выбрать снова
+    if (!files.length) return;
+    setExtracting(true);
+    setError(null);
+    try {
+      const { text } = await apiExtractScreenshots(files);
+      setConversation((c) => (c.trim() ? c.trim() + "\n\n" + text : text));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -133,7 +159,13 @@ export default function SessionPage() {
           : (answers[q.id]?.transcript ?? ""),
         skipped: answers[q.id]?.skipped ?? false,
       }));
-      const res = await apiSubmitRound(sessionId, round, payload);
+      // переписку/скриншоты учитываем в финальном чеклисте (3-й раунд)
+      const res = await apiSubmitRound(
+        sessionId,
+        round,
+        payload,
+        round === 3 ? conversation.trim() : "",
+      );
       if (res.round_summary) {
         setSummaries((s) => [...s, res.round_summary!]);
       }
@@ -166,49 +198,12 @@ export default function SessionPage() {
               <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-3">
                 Новый клиент
               </h1>
-              <p className="text-muted text-[0.95rem] mb-6 text-pretty">
-                Укажите, о ком этот чеклист, и выберите способ ввода.
+              <p className="text-muted text-[0.95rem] mb-8 text-pretty">
+                Имя и дата — обязательны. Переписку с клиентом можно добавить
+                текстом или скриншотами (необязательно) — ИИ учтёт её в чеклисте.
               </p>
 
-              {/* Способ: 10 вопросов голосом/текстом ИЛИ вставить готовую переписку */}
-              <div
-                className="mb-8 inline-flex rounded-lg border border-line-strong bg-bg p-0.5"
-                role="tablist"
-                aria-label="Способ ввода"
-              >
-                {(
-                  [
-                    ["questions", "По вопросам"],
-                    ["paste", "Вставить переписку"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === key}
-                    onClick={() => {
-                      setMode(key);
-                      setError(null);
-                    }}
-                    disabled={screen === "starting"}
-                    className={
-                      "h-9 rounded-md px-4 text-sm font-medium transition-colors " +
-                      (mode === key
-                        ? "bg-primary-strong text-white shadow-sm"
-                        : "text-muted hover:text-ink")
-                    }
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <form
-                onSubmit={mode === "paste" ? analyzeText : startSession}
-                className="space-y-4"
-                noValidate
-              >
+              <form onSubmit={startSession} className="space-y-5" noValidate>
                 <FormField
                   label="Имя клиента"
                   name="client_name"
@@ -230,24 +225,38 @@ export default function SessionPage() {
                   />
                 </label>
 
-                {mode === "paste" && (
-                  <label className="block">
-                    <span className="mb-1.5 block text-xs font-medium text-muted">
-                      Переписка с клиентом
+                {/* Переписка — необязательное вложение: текст и/или скриншоты */}
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted">
+                      Переписка с клиентом{" "}
+                      <span className="text-subtle">— необязательно</span>
                     </span>
-                    <textarea
-                      value={conversation}
-                      onChange={(e) => setConversation(e.target.value)}
-                      rows={10}
-                      placeholder="Вставьте сюда диалог из Instagram, WhatsApp или Telegram — целиком, как есть…"
-                      className="w-full resize-y rounded-xl border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
-                    />
-                    <span className="mt-1.5 block text-xs text-muted">
-                      ИИ разберёт диалог и сам соберёт чеклист, сделку и аналитику —
-                      без 10 вопросов.
-                    </span>
-                  </label>
-                )}
+                    <label className="btn btn-secondary btn-sm cursor-pointer">
+                      {extracting ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <ImageUp size={15} />
+                      )}
+                      {extracting ? "Распознаю…" : "Скриншоты"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={onScreenshots}
+                        disabled={extracting || screen === "starting"}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    value={conversation}
+                    onChange={(e) => setConversation(e.target.value)}
+                    rows={8}
+                    placeholder="Вставьте диалог из Instagram / WhatsApp / Telegram текстом, либо загрузите скриншоты — их текст добавится сюда…"
+                    className="w-full resize-y rounded-xl border border-line-strong bg-bg px-4 py-3 text-[0.95rem] leading-relaxed focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  />
+                </div>
 
                 {error && (
                   <p className="text-sm text-danger" role="alert">
@@ -255,34 +264,50 @@ export default function SessionPage() {
                   </p>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={
-                    screen === "starting" ||
-                    !clientName.trim() ||
-                    (mode === "paste" && conversation.trim().length < 20)
-                  }
-                  className="btn btn-primary"
-                >
-                  {screen === "starting" ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      {mode === "paste"
-                        ? "Анализирую переписку…"
-                        : "Готовим вопросы…"}
-                    </>
-                  ) : mode === "paste" ? (
-                    <>
-                      Сформировать чеклист
-                      <ArrowRight size={16} />
-                    </>
-                  ) : (
-                    <>
-                      Начать
-                      <ArrowRight size={16} />
-                    </>
-                  )}
-                </button>
+                <div className="flex flex-wrap gap-3 pt-1">
+                  <button
+                    type="submit"
+                    disabled={screen === "starting" || !clientName.trim()}
+                    className="btn btn-primary"
+                  >
+                    {pending === "questions" ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Готовим вопросы…
+                      </>
+                    ) : (
+                      <>
+                        К вопросам
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={analyzeText}
+                    disabled={
+                      screen === "starting" ||
+                      !clientName.trim() ||
+                      conversation.trim().length < 20
+                    }
+                    className="btn btn-secondary"
+                    title="Собрать чеклист только из переписки, без вопросов"
+                  >
+                    {pending === "paste" ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Анализирую…
+                      </>
+                    ) : (
+                      "Сформировать сразу по переписке"
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-muted text-pretty">
+                  «К вопросам» — пройти опрос (переписка учтётся в итоговом
+                  чеклисте). «Сформировать сразу» — собрать чеклист только из
+                  переписки, без вопросов.
+                </p>
               </form>
             </div>
           )}

@@ -15,6 +15,9 @@ class AgentState(TypedDict, total=False):
     all_answers: List[Answer]
 
     round_summaries: List[str]
+    conversation: str  # переписка/скриншоты (опц.) — учитывается в финале
+
+
 
     checklist_items: List[ChecklistItem]
     insights: LeadInsights

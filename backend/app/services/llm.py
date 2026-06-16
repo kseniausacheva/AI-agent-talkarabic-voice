@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -161,11 +162,22 @@ class LLMService:
         all_answers: List[Answer],
         round_summaries: List[str],
         client_date: str = "",
+        conversation: str = "",
     ) -> Tuple[List[ChecklistItem], LeadInsights, DealInfo]:
-        """Финальная агрегация: чеклист + аналитика лида + сделка одним вызовом."""
+        """Финальная агрегация: чеклист + аналитика лида + сделка одним вызовом.
+        Если передана conversation (переписка/скриншоты) — учитывается вместе с
+        ответами менеджера как первоисточник."""
         user_payload = self._format_history(
             all_answers, round_summaries, client_date=client_date
         )
+        if conversation.strip():
+            user_payload = (
+                "Переписка с клиентом из мессенджера (первоисточник, учитывай вместе "
+                "с ответами менеджера ниже):\n\n"
+                + conversation.strip()
+                + "\n\n---\n\n"
+                + user_payload
+            )
         data = self._chat_json(
             system=prompts.SYSTEM_GENERATE_CHECKLIST,
             user=user_payload,
@@ -193,6 +205,39 @@ class LLMService:
             temperature=0.3,
         )
         return _build_checklist_result(data)
+
+    def extract_conversation_from_images(
+        self, images: List[Tuple[bytes, str]]
+    ) -> str:
+        """Распознаёт текст переписки со скриншотов (gpt-4o vision).
+        images — список (байты, mime). Возвращает диалог текстом."""
+        content: List[Dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    "Это скриншоты переписки менеджера с клиентом из мессенджера "
+                    "(Instagram/WhatsApp/Telegram). Извлеки ВЕСЬ текст диалога "
+                    "дословно, по порядку сообщений. Где понятно — помечай, кто "
+                    "пишет («Клиент:» / «Менеджер:»). Верни только текст переписки, "
+                    "без своих комментариев и пояснений."
+                ),
+            }
+        ]
+        for data, mime in images:
+            b64 = base64.b64encode(data).decode("ascii")
+            mime = mime if mime.startswith("image/") else "image/png"
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                }
+            )
+        completion = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": content}],
+            temperature=0,
+        )
+        return (completion.choices[0].message.content or "").strip()
 
     @staticmethod
     def _format_history(

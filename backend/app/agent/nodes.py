@@ -47,6 +47,7 @@ def generate_checklist_node(state: AgentState) -> Dict:
         all_answers=state["all_answers"],
         round_summaries=state.get("round_summaries", []),
         client_date=state.get("client_date", ""),
+        conversation=state.get("conversation", ""),
     )
     return {"checklist_items": items, "insights": insights, "deal": deal}
 

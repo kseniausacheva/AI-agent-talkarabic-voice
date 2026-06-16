@@ -198,6 +198,7 @@ export async function apiSubmitRound(
   sessionId: string,
   round: number,
   answers: AnswerPayload[],
+  conversation = "",
 ): Promise<SubmitRoundResponse> {
   if (USE_MOCK) {
     await wait(1600);
@@ -206,7 +207,28 @@ export async function apiSubmitRound(
   const res = await request(`/api/session/${sessionId}/submit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({ answers, conversation }),
+  });
+  return res.json();
+}
+
+/** Распознать переписку со скриншотов (gpt-4o vision) → текст для поля переписки. */
+export async function apiExtractScreenshots(
+  files: File[],
+): Promise<{ text: string }> {
+  if (USE_MOCK) {
+    await wait(1500);
+    return {
+      text:
+        "Клиент: Здравствуйте, хочу узнать про курсы арабского (распознано из скриншота, demo)\n" +
+        "Менеджер: Здравствуйте! Подскажите ваше имя и город?",
+    };
+  }
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  const res = await request("/api/session/extract-screenshots", {
+    method: "POST",
+    body: form,
   });
   return res.json();
 }

@@ -3,7 +3,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Annotated, Literal, Optional
+from typing import Annotated, List, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
@@ -173,6 +173,39 @@ async def create_from_text(
     return {"session_id": session_id}
 
 
+@router.post("/extract-screenshots")
+async def extract_screenshots(
+    files: Annotated[List[UploadFile], File(description="скриншоты переписки")],
+    manager: Manager = Depends(get_current_manager),
+):
+    """Распознаёт текст переписки со скриншотов (gpt-4o vision) → {text}.
+    Фронт дописывает результат в поле переписки."""
+    if not files:
+        raise HTTPException(status_code=400, detail="Нет файлов")
+    if len(files) > 8:
+        raise HTTPException(status_code=400, detail="Не больше 8 скриншотов за раз")
+    images: list = []
+    for f in files:
+        data = await f.read()
+        if not data:
+            continue
+        if len(data) > 8_000_000:
+            raise HTTPException(status_code=400, detail="Файл больше 8 МБ")
+        images.append((data, f.content_type or "image/png"))
+    if not images:
+        raise HTTPException(status_code=400, detail="Пустые файлы")
+
+    from app.services.llm import get_llm_service
+
+    llm = get_llm_service()
+    try:
+        text = await asyncio.to_thread(llm.extract_conversation_from_images, images)
+    except Exception as exc:
+        logger.exception("extract_screenshots failed")
+        raise HTTPException(status_code=500, detail=f"Не удалось распознать: {exc}")
+    return {"text": text}
+
+
 @router.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(
     audio_file: Annotated[UploadFile, File(description="webm audio chunk")],
@@ -206,11 +239,14 @@ async def submit_round(
     answers = payload.get("answers")
     if not isinstance(answers, list) or not answers:
         raise HTTPException(status_code=400, detail="answers must be a non-empty list")
+    conversation = payload.get("conversation") or ""
+    if not isinstance(conversation, str):
+        conversation = ""
 
     session_manager = get_session_manager()
     try:
         state, just_completed = await session_manager.submit_round(
-            db, session_id, answers, manager
+            db, session_id, answers, manager, conversation=conversation
         )
     except SessionNotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")

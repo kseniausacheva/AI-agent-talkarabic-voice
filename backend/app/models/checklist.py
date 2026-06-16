@@ -229,3 +229,75 @@ class DealInfo(BaseModel):
 
     def is_closed(self) -> bool:
         return self.paid
+
+
+class AdviceObjection(BaseModel):
+    point: str = ""  # возражение клиента
+    response: str = ""  # готовый ответ (из базы школы)
+
+    @field_validator("point", "response", mode="before")
+    @classmethod
+    def _t(cls, v: Any) -> str:
+        return _str_or_empty(v)
+
+
+class AdviceTouch(BaseModel):
+    when: str = ""  # «сегодня» / «через 2 дня» / дата
+    channel: str = ""  # WhatsApp / Telegram / …
+    message: str = ""  # готовый текст сообщения
+
+    @field_validator("when", "channel", "message", mode="before")
+    @classmethod
+    def _t(cls, v: Any) -> str:
+        return _str_or_empty(v)
+
+
+class ClientAdvice(BaseModel):
+    """План работы с клиентом от AI-советника (на основе базы школы)."""
+
+    approach: str = ""  # как общаться именно с этим клиентом
+    ask_next: List[str] = []  # что уточнить в следующем контакте
+    objections: List[AdviceObjection] = []
+    touchpoints: List[AdviceTouch] = []  # последовательность касаний
+
+    @field_validator("approach", mode="before")
+    @classmethod
+    def _t_approach(cls, v: Any) -> str:
+        return _str_or_empty(v)
+
+    @field_validator("ask_next", mode="before")
+    @classmethod
+    def _t_ask(cls, v: Any) -> List[str]:
+        if not isinstance(v, list):
+            return []
+        return [_str_or_empty(x).strip() for x in v if _str_or_empty(x).strip()]
+
+    @field_validator("objections", mode="before")
+    @classmethod
+    def _t_obj(cls, v: Any) -> List[AdviceObjection]:
+        if not isinstance(v, list):
+            return []
+        out: List[AdviceObjection] = []
+        for x in v:
+            if isinstance(x, dict):
+                try:
+                    out.append(AdviceObjection(**x))
+                except Exception:
+                    continue
+        return out
+
+    @field_validator("touchpoints", mode="before")
+    @classmethod
+    def _t_touch(cls, v: Any) -> List[AdviceTouch]:
+        if not isinstance(v, list):
+            return []
+        out: List[AdviceTouch] = []
+        for x in v:
+            if isinstance(x, dict):
+                try:
+                    t = AdviceTouch(**x)
+                except Exception:
+                    continue
+                if t.message.strip():
+                    out.append(t)
+        return out

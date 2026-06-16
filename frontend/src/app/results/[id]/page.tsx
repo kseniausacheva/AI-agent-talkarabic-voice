@@ -9,6 +9,7 @@ import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { ChecklistPreview } from "@/components/ChecklistPreview";
 import { DealCard } from "@/components/DealCard";
+import { AdviceCard } from "@/components/AdviceCard";
 import { apiDownloadChecklist, apiGetResults } from "@/lib/api";
 import type {
   ChecklistItem,
@@ -146,6 +147,8 @@ export default function ResultsPage({
               <DealCard sessionId={id} initial={deal} />
 
               {insights && <LeadInsightsCard insights={insights} />}
+
+              <AdviceCard sessionId={id} />
 
               <div className="mb-8 flex items-center gap-2 border-b border-line">
                 <TabButton

@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from openai import OpenAI
 
 from app.config import get_settings
-from app.models.checklist import ChecklistItem, DealInfo, LeadInsights
+from app.models.checklist import ChecklistItem, ClientAdvice, DealInfo, LeadInsights
 from app.models.question import Answer
 from app.agent import prompts
 
@@ -205,6 +205,34 @@ class LLMService:
             temperature=0.3,
         )
         return _build_checklist_result(data)
+
+    def generate_advice(
+        self,
+        client_summary: str,
+        knowledge_base: str = "",
+        client_date: str = "",
+    ) -> ClientAdvice:
+        """План работы с клиентом на основе базы знаний школы + карточки клиента."""
+        kb = knowledge_base.strip() or (
+            "(база школы не загружена — используй общие лучшие практики продаж "
+            "языковой школы, не выдумывай конкретику о школе)"
+        )
+        user = (
+            "БАЗА ЗНАНИЙ ШКОЛЫ (скрипты, ответы на возражения, программы):\n"
+            + kb
+            + "\n\n---\n\nКАРТОЧКА КЛИЕНТА:\n"
+            + client_summary.strip()
+        )
+        if client_date:
+            user += f"\n\nДата последнего контакта: {client_date}"
+        data = self._chat_json(
+            system=prompts.SYSTEM_CLIENT_ADVICE, user=user, temperature=0.4
+        )
+        try:
+            return ClientAdvice.model_validate(data)
+        except Exception as exc:  # pragma: no cover — поля толерантны
+            logger.warning("Malformed advice from LLM, using empty: %s", exc)
+            return ClientAdvice()
 
     def extract_conversation_from_images(
         self, images: List[Tuple[bytes, str]]

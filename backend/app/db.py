@@ -80,6 +80,16 @@ class Checklist(Base):
     deal_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class AppSetting(Base):
+    """Школьные настройки key→value (напр. база скриптов 'knowledge_base')."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+
 # Миграции: колонка → DDL (добавляется, если PRAGMA её не видит)
 _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",

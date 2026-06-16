@@ -203,6 +203,18 @@ export type ResultsResponse = {
   deal: DealInfo | null;
 };
 
+/* ----------------- AI-советник (план работы с клиентом) ----------------- */
+
+export type AdviceObjection = { point: string; response: string };
+export type AdviceTouch = { when: string; channel: string; message: string };
+
+export type ClientAdvice = {
+  approach: string;
+  ask_next: string[];
+  objections: AdviceObjection[];
+  touchpoints: AdviceTouch[];
+};
+
 export type RecorderState =
   | "idle"
   | "recording"

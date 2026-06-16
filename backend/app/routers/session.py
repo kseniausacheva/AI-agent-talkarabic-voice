@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Manager, get_session as get_db_session
-from app.models.checklist import DealInfo
+from app.models.checklist import ClientAdvice, DealInfo
 from app.models.session import (
     DealUpdate,
     ResultsResponse,
@@ -347,6 +347,56 @@ async def update_deal(
         logger.exception("update_deal failed")
         raise HTTPException(status_code=500, detail=f"Deal update failed: {exc}")
     return deal
+
+
+@router.post("/{session_id}/advice", response_model=ClientAdvice)
+async def client_advice(
+    session_id: Annotated[str, Path()],
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """AI-советник: план работы с этим клиентом на основе базы знаний школы —
+    что уточнить, как общаться, ответы на возражения, последовательность касаний."""
+    session_manager = get_session_manager()
+    try:
+        state = await session_manager.get_session(db, session_id, manager)
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not state.is_complete or not state.markdown_content:
+        raise HTTPException(status_code=409, detail="Session not yet complete")
+
+    from app.routers.knowledge import get_knowledge_base
+
+    knowledge = await get_knowledge_base(db)
+
+    parts = [state.markdown_content or ""]
+    ins = state.insights
+    if ins:
+        parts.append(
+            f"\nСтадия лида: {ins.stage or '—'}, оценка {ins.lead_score or '—'}/10."
+        )
+        if ins.objections:
+            parts.append(
+                "Возражения клиента: "
+                + "; ".join(
+                    f"{o.type}: {o.note}".strip(": ") for o in ins.objections
+                )
+            )
+    summary = "\n".join(p for p in parts if p)
+
+    from app.services.llm import get_llm_service
+
+    llm = get_llm_service()
+    try:
+        advice = await asyncio.to_thread(
+            llm.generate_advice, summary, knowledge, state.client_date
+        )
+    except Exception as exc:
+        logger.exception("client_advice failed")
+        raise HTTPException(status_code=500, detail=f"Advice failed: {exc}")
+    return advice
 
 
 @router.get("/{session_id}/download")

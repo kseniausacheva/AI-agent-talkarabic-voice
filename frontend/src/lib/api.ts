@@ -1,11 +1,13 @@
 import { authHeaders, clearToken } from "./auth";
 import {
+  MOCK_ADVICE,
   MOCK_DEMO_SESSION_ID,
   MOCK_MANAGER,
   MOCK_MARKDOWN,
   MOCK_TOKEN,
   MOCK_TRANSCRIPTS,
   mockChecklists,
+  mockKnowledgeState,
   mockResults,
   mockStart,
   mockStats,
@@ -16,6 +18,7 @@ import type {
   AnswerPayload,
   AuthResponse,
   ChecklistsResponse,
+  ClientAdvice,
   DealInfo,
   DealUpdate,
   FunnelColumn,
@@ -308,6 +311,50 @@ export async function apiUpdateDeal(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),
+  });
+  return res.json();
+}
+
+/* ----------------- База знаний и AI-советник ----------------- */
+
+/** Сгенерировать план работы с клиентом (на основе базы школы). */
+export async function apiGetAdvice(sessionId: string): Promise<ClientAdvice> {
+  if (USE_MOCK) {
+    await wait(1300);
+    return MOCK_ADVICE;
+  }
+  const res = await request(`/api/session/${sessionId}/advice`, {
+    method: "POST",
+  });
+  return res.json();
+}
+
+/** База знаний школы — чтение (admin). */
+export async function apiGetKnowledge(): Promise<{
+  text: string;
+  updated_at: string | null;
+}> {
+  if (USE_MOCK) {
+    await wait(200);
+    return { text: mockKnowledgeState.text, updated_at: null };
+  }
+  const res = await request("/api/knowledge");
+  return res.json();
+}
+
+/** База знаний школы — сохранить (admin). */
+export async function apiSaveKnowledge(
+  text: string,
+): Promise<{ text: string; updated_at: string }> {
+  if (USE_MOCK) {
+    await wait(300);
+    mockKnowledgeState.text = text;
+    return { text, updated_at: new Date().toISOString() };
+  }
+  const res = await request("/api/knowledge", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
   });
   return res.json();
 }

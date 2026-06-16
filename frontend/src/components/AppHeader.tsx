@@ -64,9 +64,14 @@ export function AppHeader() {
               Воронка
             </HeaderLink>
             {manager?.role === "admin" && (
-              <HeaderLink href="/stats" active={pathname === "/stats"}>
-                Статистика
-              </HeaderLink>
+              <>
+                <HeaderLink href="/stats" active={pathname === "/stats"}>
+                  Статистика
+                </HeaderLink>
+                <HeaderLink href="/knowledge" active={pathname === "/knowledge"}>
+                  База
+                </HeaderLink>
+              </>
             )}
             {manager && (
               <Link

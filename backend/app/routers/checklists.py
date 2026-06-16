@@ -103,11 +103,10 @@ async def list_checklists(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Список чеклистов: manager видит только свои, admin — все."""
+    # Общий пул: вся команда видит всех клиентов (совместная работа).
     stmt = select(Checklist, Manager.display_name).join(
         Manager, Checklist.manager_id == Manager.id
     )
-    if manager.role != "admin":
-        stmt = stmt.where(Checklist.manager_id == manager.id)
 
     if due == "today":
         # «Сегодня связаться»: completed, next_contact_date <= сегодня UTC,

@@ -116,9 +116,9 @@ class SessionManager:
 
     @staticmethod
     def _check_access(row: Checklist, manager: Manager) -> None:
-        """Доступ: владелец сессии или admin, иначе SessionAccessError (→ 403)."""
-        if manager.role != "admin" and row.manager_id != manager.id:
-            raise SessionAccessError(row.id)
+        """Общий пул клиентов: вся команда школы видит и ведёт всех клиентов
+        совместно — доступ открыт любому аутентифицированному менеджеру."""
+        return
 
     @staticmethod
     async def _load_row(db: AsyncSession, session_id: str) -> Checklist:

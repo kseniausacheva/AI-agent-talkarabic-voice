@@ -349,6 +349,65 @@ async def update_deal(
     return deal
 
 
+class ClientUpdate(BaseModel):
+    """Ручное обновление данных клиента (имя, дата контакта). Оба поля
+    опциональны — приходит только то, что меняли."""
+
+    client_name: Optional[str] = Field(default=None, max_length=100)
+    client_date: Optional[str] = None
+
+    @field_validator("client_name")
+    @classmethod
+    def _strip_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Имя клиента не может быть пустым")
+        return value
+
+    @field_validator("client_date")
+    @classmethod
+    def _validate_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or value == "":
+            return None
+        if not _DATE_RE.fullmatch(value):
+            raise ValueError("client_date должен быть в формате YYYY-MM-DD")
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("client_date — несуществующая дата")
+        return value
+
+
+@router.patch("/{session_id}/client")
+async def update_client(
+    session_id: Annotated[str, Path()],
+    payload: ClientUpdate,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Ручное обновление данных клиента (имя, дата контакта). Возвращает
+    актуальные {client_name, client_date}."""
+    session_manager = get_session_manager()
+    try:
+        result = await session_manager.update_client(
+            db,
+            session_id,
+            manager,
+            client_name=payload.client_name,
+            client_date=payload.client_date,
+        )
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception as exc:
+        logger.exception("update_client failed")
+        raise HTTPException(status_code=500, detail=f"Client update failed: {exc}")
+    return result
+
+
 @router.post("/{session_id}/advice", response_model=ClientAdvice)
 async def client_advice(
     session_id: Annotated[str, Path()],

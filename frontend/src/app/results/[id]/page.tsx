@@ -29,6 +29,8 @@ export default function ResultsPage({
   const [markdown, setMarkdown] = useState<string>("");
   const [insights, setInsights] = useState<LeadInsights | null>(null);
   const [deal, setDeal] = useState<DealInfo | null>(null);
+  const [clientName, setClientName] = useState("");
+  const [clientDate, setClientDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"checklist" | "markdown">("checklist");
@@ -44,6 +46,8 @@ export default function ResultsPage({
         setMarkdown(data.markdown);
         setInsights(data.insights ?? null);
         setDeal(data.deal ?? null);
+        setClientName(data.client_name ?? "");
+        setClientDate(data.client_date ?? "");
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -144,7 +148,12 @@ export default function ResultsPage({
                 </div>
               </div>
 
-              <DealCard sessionId={id} initial={deal} />
+              <DealCard
+                sessionId={id}
+                initialDeal={deal}
+                initialName={clientName}
+                initialDate={clientDate}
+              />
 
               {insights && <LeadInsightsCard insights={insights} />}
 

@@ -311,6 +311,28 @@ class SessionManager:
             await db.commit()
             return deal
 
+    async def update_client(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        manager: Manager,
+        client_name: Optional[str] = None,
+        client_date: Optional[str] = None,
+    ) -> Dict:
+        """Ручное обновление данных клиента (имя, дата контакта). Меняются
+        только переданные (не None) поля. Возвращает актуальные значения.
+
+        Доступ — общий пул (любой аутентифицированный менеджер)."""
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+            if client_name is not None:
+                row.client_name = client_name
+            if client_date is not None:
+                row.client_date = client_date
+            await db.commit()
+            return {"client_name": row.client_name, "client_date": row.client_date}
+
     async def create_from_text(
         self,
         db: AsyncSession,

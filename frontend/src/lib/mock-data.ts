@@ -201,6 +201,22 @@ export function mockUpdateDeal(changes: DealUpdate): DealInfo {
   return { ...mockDealState };
 }
 
+/** Данные клиента для demo-abc123 (mock). Мутируются mockUpdateClient. */
+const mockClientState = { client_name: "Анна", client_date: daysAgoISO(1) };
+
+export function mockUpdateClient(changes: {
+  client_name?: string;
+  client_date?: string | null;
+}): { client_name: string; client_date: string } {
+  if (changes.client_name != null && changes.client_name !== "") {
+    mockClientState.client_name = changes.client_name;
+  }
+  if (changes.client_date != null && changes.client_date !== "") {
+    mockClientState.client_date = changes.client_date;
+  }
+  return { ...mockClientState };
+}
+
 /** База знаний школы (mock, изменяемая). */
 export const mockKnowledgeState = {
   text:
@@ -428,6 +444,8 @@ export function mockResults(): ResultsResponse {
     session_id: MOCK_DEMO_SESSION_ID,
     checklist: MOCK_CHECKLIST,
     markdown: MOCK_MARKDOWN,
+    client_name: mockClientState.client_name,
+    client_date: mockClientState.client_date,
     insights: MOCK_INSIGHTS,
     deal: { ...mockDealState },
   };

@@ -12,6 +12,7 @@ import {
   mockStart,
   mockStats,
   mockSubmit,
+  mockUpdateClient,
   mockUpdateDeal,
 } from "./mock-data";
 import type {
@@ -19,6 +20,7 @@ import type {
   AuthResponse,
   ChecklistsResponse,
   ClientAdvice,
+  ClientUpdate,
   DealInfo,
   DealUpdate,
   FunnelColumn,
@@ -308,6 +310,26 @@ export async function apiUpdateDeal(
     return mockUpdateDeal(changes);
   }
   const res = await request(`/api/session/${sessionId}/deal`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  return res.json();
+}
+
+/**
+ * Обновление данных клиента (имя, дата контакта). Возвращает актуальные
+ * client_name/client_date.
+ */
+export async function apiUpdateClient(
+  sessionId: string,
+  changes: ClientUpdate,
+): Promise<{ client_name: string; client_date: string }> {
+  if (USE_MOCK) {
+    await wait(250);
+    return mockUpdateClient(changes);
+  }
+  const res = await request(`/api/session/${sessionId}/client`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),

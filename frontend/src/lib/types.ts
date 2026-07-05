@@ -199,8 +199,16 @@ export type ResultsResponse = {
   session_id: string;
   checklist: ChecklistItem[];
   markdown: string;
+  client_name: string;
+  client_date: string;
   insights: LeadInsights | null;
   deal: DealInfo | null;
+};
+
+/** Обновление данных клиента (PATCH) — имя и/или дата контакта. */
+export type ClientUpdate = {
+  client_name?: string;
+  client_date?: string | null;
 };
 
 /* ----------------- AI-советник (план работы с клиентом) ----------------- */

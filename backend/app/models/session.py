@@ -68,3 +68,4 @@ class DealUpdate(BaseModel):
     planned_payment_date: Optional[str] = None
     paid: Optional[bool] = None
     paid_date: Optional[str] = None
+    platform_status: Optional[str] = None

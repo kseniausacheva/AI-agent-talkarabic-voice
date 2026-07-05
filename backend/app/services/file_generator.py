@@ -20,7 +20,14 @@ _STATUS_LABEL = {
 _PRODUCT_LABEL = {
     "individual": "индивидуальные занятия",
     "course": "курс / поток",
+    "platform": "платформа (самостоятельное обучение)",
     "undecided": "не определился",
+}
+
+_PLATFORM_STATUS_LABEL = {
+    "not_offered": "не предлагали",
+    "offered": "предложили",
+    "taken": "оформил",
 }
 
 
@@ -52,7 +59,14 @@ def _deal_section(deal: Optional[DealInfo]) -> List[str]:
     """Секция «Сделка» — рендерим, только если есть осмысленные данные."""
     if deal is None:
         return []
-    has_data = bool(deal.product or deal.price is not None or deal.paid or deal.product_note)
+    platform_shown = getattr(deal, "platform_status", "not_offered") != "not_offered"
+    has_data = bool(
+        deal.product
+        or deal.price is not None
+        or deal.paid
+        or deal.product_note
+        or platform_shown
+    )
     if not has_data:
         return []
     lines = ["## Сделка", ""]
@@ -64,6 +78,9 @@ def _deal_section(deal: Optional[DealInfo]) -> List[str]:
         lines.append(f"- **Продукт:** {deal.product_note}")
     lines.append(f"- **Стоимость:** {_format_price(deal)}")
     lines.append(f"- **Оплата:** {_format_payment(deal)}")
+    if platform_shown:
+        label = _PLATFORM_STATUS_LABEL.get(deal.platform_status, deal.platform_status)
+        lines.append(f"- **Платформа:** {label}")
     lines.append("")
     return lines
 

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2, Save, User, Wallet } from "lucide-react";
+import { Check, Film, Loader2, Save, User, Wallet } from "lucide-react";
 import { apiUpdateClient, apiUpdateDeal } from "@/lib/api";
-import type { DealInfo, ProductType } from "@/lib/types";
+import type { DealInfo, PlatformStatus, ProductType } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 const EMPTY_DEAL: DealInfo = {
@@ -15,12 +15,20 @@ const EMPTY_DEAL: DealInfo = {
   planned_payment_date: null,
   paid: false,
   paid_date: null,
+  platform_status: "not_offered",
 };
 
 const PRODUCTS: { key: ProductType; label: string }[] = [
   { key: "individual", label: "Индивидуально" },
   { key: "course", label: "Курс · поток" },
+  { key: "platform", label: "Платформа" },
   { key: "undecided", label: "Не определился" },
+];
+
+const PLATFORM_OPTIONS: { key: PlatformStatus; label: string }[] = [
+  { key: "not_offered", label: "Не предлагали" },
+  { key: "offered", label: "Предложили" },
+  { key: "taken", label: "Оформил" },
 ];
 
 function priceToText(n: number | null): string {
@@ -44,6 +52,7 @@ type Snapshot = {
   plannedDate: string | null;
   paid: boolean;
   paidDate: string | null;
+  platformStatus: PlatformStatus;
 };
 
 /**
@@ -51,6 +60,9 @@ type Snapshot = {
  * ИИ заранее заполняет продукт/стоимость/намерение из разговора; менеджер
  * правит ЛЮБЫЕ поля (включая имя и дату контакта) и сохраняет ОДНОЙ кнопкой
  * «Сохранить». До нажатия ничего не отправляется — это буфер, а не автосейв.
+ *
+ * Отдельный блок «Платформа» — предлагали ли клиенту платформу
+ * самостоятельного обучения (фильмы/песни), независимо от основного продукта.
  */
 export function DealCard({
   sessionId,
@@ -75,6 +87,9 @@ export function DealCard({
   );
   const [paid, setPaid] = useState(base.paid);
   const [paidDate, setPaidDate] = useState<string | null>(base.paid_date);
+  const [platformStatus, setPlatformStatus] = useState<PlatformStatus>(
+    base.platform_status ?? "not_offered",
+  );
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -89,6 +104,7 @@ export function DealCard({
     plannedDate: base.planned_payment_date,
     paid: base.paid,
     paidDate: base.paid_date,
+    platformStatus: base.platform_status ?? "not_offered",
   }));
 
   const current: Snapshot = {
@@ -101,6 +117,7 @@ export function DealCard({
     plannedDate,
     paid,
     paidDate,
+    platformStatus,
   };
   const dirty = JSON.stringify(current) !== JSON.stringify(savedSnap);
 
@@ -127,6 +144,7 @@ export function DealCard({
         planned_payment_date: plannedDate,
         paid,
         paid_date: paidDate,
+        platform_status: platformStatus,
       });
       // синхронизируем поля с тем, что реально сохранил бэкенд
       setName(client.client_name);
@@ -138,6 +156,7 @@ export function DealCard({
       setPlannedDate(deal.planned_payment_date);
       setPaid(deal.paid);
       setPaidDate(deal.paid_date);
+      setPlatformStatus(deal.platform_status ?? "not_offered");
       setSavedSnap({
         name: client.client_name.trim(),
         date: client.client_date,
@@ -148,6 +167,7 @@ export function DealCard({
         plannedDate: deal.planned_payment_date,
         paid: deal.paid,
         paidDate: deal.paid_date,
+        platformStatus: deal.platform_status ?? "not_offered",
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -286,6 +306,38 @@ export function DealCard({
             </Field>
           )}
         </div>
+      </div>
+
+      {/* --- Платформа (отдельное окошко) --- */}
+      <div className="mt-6 rounded-lg border border-line-strong bg-bg/60 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+            <Film size={14} />
+            Платформа
+          </span>
+          <span className="text-xs text-subtle">
+            самостоятельное обучение — фильмы, песни и т.д.
+          </span>
+        </div>
+        <Field label="Предложили клиенту?">
+          <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-line-strong bg-bg p-0.5">
+            {PLATFORM_OPTIONS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPlatformStatus(p.key)}
+                className={cn(
+                  "h-9 rounded-md px-3 text-sm transition-colors",
+                  platformStatus === p.key
+                    ? "bg-primary-strong font-semibold text-white shadow-sm"
+                    : "text-muted hover:text-ink",
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </Field>
       </div>
 
       {/* --- Сохранение --- */}

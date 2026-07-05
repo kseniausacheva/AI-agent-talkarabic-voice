@@ -171,7 +171,10 @@ export type LeadInsights = {
 
 /* ------------------------------ Сделка ------------------------------ */
 
-export type ProductType = "individual" | "course" | "undecided";
+export type ProductType = "individual" | "course" | "platform" | "undecided";
+
+/** Статус предложения платформы клиенту (отдельно от основного продукта). */
+export type PlatformStatus = "not_offered" | "offered" | "taken";
 
 export type DealInfo = {
   product: ProductType | null;
@@ -182,6 +185,7 @@ export type DealInfo = {
   planned_payment_date: string | null;
   paid: boolean;
   paid_date: string | null;
+  platform_status: PlatformStatus;
 };
 
 /** Частичное обновление сделки (PATCH) — только изменённые поля. */
@@ -193,6 +197,7 @@ export type DealUpdate = Partial<{
   planned_payment_date: string | null;
   paid: boolean;
   paid_date: string | null;
+  platform_status: PlatformStatus;
 }>;
 
 export type ResultsResponse = {

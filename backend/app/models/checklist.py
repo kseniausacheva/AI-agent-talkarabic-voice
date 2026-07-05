@@ -10,11 +10,17 @@ LeadStage = Literal["new", "warm", "hot", "rejected"]
 ObjectionType = Literal["price", "time", "tech", "trust", "other"]
 
 # Сделка: какой продукт хочет клиент
-ProductType = Literal["individual", "course", "undecided"]
+# platform — платформа самостоятельного обучения (фильмы/песни и т.п.)
+ProductType = Literal["individual", "course", "platform", "undecided"]
+
+# Статус предложения платформы клиенту (отдельно от основного продукта):
+# не предлагали / предложили / оформил.
+PlatformStatus = Literal["not_offered", "offered", "taken"]
 
 _STAGES = ("new", "warm", "hot", "rejected")
 _OBJECTION_TYPES = ("price", "time", "tech", "trust", "other")
-_PRODUCT_TYPES = ("individual", "course", "undecided")
+_PRODUCT_TYPES = ("individual", "course", "platform", "undecided")
+_PLATFORM_STATUSES = ("not_offered", "offered", "taken")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -182,7 +188,7 @@ class DealInfo(BaseModel):
     Валидация толерантная: битые значения → дефолты, запрос не падает.
     """
 
-    product: Optional[ProductType] = None     # individual | course | undecided
+    product: Optional[ProductType] = None     # individual | course | platform | undecided
     product_note: str = ""                      # «в следующий поток» / «только индивидуально»
     price: Optional[float] = None               # Стоимость
     currency: str = "RUB"
@@ -190,6 +196,9 @@ class DealInfo(BaseModel):
     planned_payment_date: Optional[str] = None   # когда планирует оплатить
     paid: bool = False                          # оплачено = сделка закрыта
     paid_date: Optional[str] = None             # дата фактической оплаты (для аналитики)
+    # Платформа самостоятельного обучения — предлагали ли её клиенту (отдельно
+    # от основного продукта): not_offered | offered | taken.
+    platform_status: PlatformStatus = "not_offered"
 
     @field_validator("product", mode="before")
     @classmethod
@@ -197,6 +206,13 @@ class DealInfo(BaseModel):
         if isinstance(value, str) and value.strip().lower() in _PRODUCT_TYPES:
             return value.strip().lower()
         return None
+
+    @field_validator("platform_status", mode="before")
+    @classmethod
+    def _tolerant_platform(cls, value: Any) -> str:
+        if isinstance(value, str) and value.strip().lower() in _PLATFORM_STATUSES:
+            return value.strip().lower()
+        return "not_offered"
 
     @field_validator("product_note", mode="before")
     @classmethod

@@ -186,6 +186,7 @@ export const MOCK_DEAL: DealInfo = {
   planned_payment_date: daysAgoISO(-5),
   paid: false,
   paid_date: null,
+  platform_status: "offered",
 };
 
 let mockDealState: DealInfo = { ...MOCK_DEAL };

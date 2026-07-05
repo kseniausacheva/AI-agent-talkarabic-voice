@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { use } from "react";
-import { Check, Copy, Download, Loader2, RotateCcw } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Copy, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
 import { ChecklistPreview } from "@/components/ChecklistPreview";
 import { DealCard } from "@/components/DealCard";
 import { AdviceCard } from "@/components/AdviceCard";
-import { apiDownloadChecklist, apiGetResults } from "@/lib/api";
+import { apiDeleteSession, apiDownloadChecklist, apiGetResults } from "@/lib/api";
 import type {
   ChecklistItem,
   DealInfo,
@@ -25,6 +26,7 @@ export default function ResultsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [markdown, setMarkdown] = useState<string>("");
   const [insights, setInsights] = useState<LeadInsights | null>(null);
@@ -35,6 +37,7 @@ export default function ResultsPage({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"checklist" | "markdown">("checklist");
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +73,18 @@ export default function ResultsPage({
     await navigator.clipboard.writeText(markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
+  }
+
+  async function deleteClient() {
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiDeleteSession(id);
+      router.push("/dashboard");
+    } catch (e) {
+      setError((e as Error).message);
+      setDeleting(false);
+    }
   }
 
   async function downloadMarkdown() {
@@ -209,23 +224,84 @@ export default function ResultsPage({
                 </pre>
               )}
 
-              <div className="mt-16 flex items-center justify-between border-t border-line pt-6">
-                <p className="text-sm text-muted">
+              <div className="mt-16 border-t border-line pt-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <DeleteClientButton
+                    deleting={deleting}
+                    onConfirm={deleteClient}
+                  />
+                  <Link
+                    href="/session"
+                    className="inline-flex items-center gap-2 text-sm text-ink hover:text-primary transition-colors"
+                  >
+                    <RotateCcw size={14} />
+                    Новая сессия
+                  </Link>
+                </div>
+                <p className="mt-4 text-xs text-subtle">
                   Сгенерировано MiniMax M3 + локальный Whisper.
                 </p>
-                <Link
-                  href="/session"
-                  className="inline-flex items-center gap-2 text-sm text-ink hover:text-primary transition-colors"
-                >
-                  <RotateCcw size={14} />
-                  Новая сессия
-                </Link>
               </div>
             </>
           )}
         </div>
       </main>
     </AuthGuard>
+  );
+}
+
+function DeleteClientButton({
+  deleting,
+  onConfirm,
+}: {
+  deleting: boolean;
+  onConfirm: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+
+  if (deleting) {
+    return (
+      <span className="inline-flex items-center gap-2 text-sm text-danger">
+        <Loader2 size={14} className="animate-spin" />
+        Удаляю…
+      </span>
+    );
+  }
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArmed(true)}
+        className="inline-flex items-center gap-2 text-sm text-muted hover:text-danger transition-colors"
+      >
+        <Trash2 size={14} />
+        Удалить клиента
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-3 text-sm">
+      <span className="font-medium text-danger">
+        Удалить клиента и весь чеклист безвозвратно?
+      </span>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-danger px-3 text-xs font-semibold text-white transition-colors hover:bg-danger/90"
+      >
+        <Trash2 size={13} />
+        Да, удалить
+      </button>
+      <button
+        type="button"
+        onClick={() => setArmed(false)}
+        className="text-xs text-muted hover:text-ink transition-colors"
+      >
+        Отмена
+      </button>
+    </span>
   );
 }
 

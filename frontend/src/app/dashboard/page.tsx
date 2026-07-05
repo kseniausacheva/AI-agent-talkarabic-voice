@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
-import { apiChecklists } from "@/lib/api";
+import { apiChecklists, apiDeleteSession } from "@/lib/api";
 import type { ChecklistListItem, ChecklistsResponse } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -55,6 +61,31 @@ export default function DashboardPage() {
   const [dueItems, setDueItems] = useState<ChecklistListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDelete(itemId: string) {
+    setDeletingId(itemId);
+    setError(null);
+    try {
+      await apiDeleteSession(itemId);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.filter((i) => i.id !== itemId),
+              total: Math.max(0, prev.total - 1),
+            }
+          : prev,
+      );
+      setDueItems((prev) => prev.filter((i) => i.id !== itemId));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setDeletingId(null);
+      setConfirmId(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -191,12 +222,15 @@ export default function DashboardPage() {
                   <th className="px-4 py-3 font-medium">Связаться</th>
                   <th className="px-4 py-3 font-medium">Сделка</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="sr-only">Действия</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10">
+                    <td colSpan={8} className="px-4 py-10">
                       <span className="flex items-center justify-center gap-3 text-muted">
                         <Loader2 size={16} className="animate-spin text-primary" />
                         Загружаем…
@@ -206,7 +240,7 @@ export default function DashboardPage() {
                 )}
                 {!loading && data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-muted">
+                    <td colSpan={8} className="px-4 py-10 text-center text-muted">
                       {q.trim()
                         ? "Ничего не найдено по запросу."
                         : "Чеклистов пока нет."}
@@ -266,6 +300,44 @@ export default function DashboardPage() {
                               <span className="h-1.5 w-1.5 rounded-full bg-subtle" />
                               В работе
                             </span>
+                          )}
+                        </td>
+                        <td
+                          className="px-4 py-3.5 text-right whitespace-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {deletingId === item.id ? (
+                            <Loader2
+                              size={15}
+                              className="inline animate-spin text-danger"
+                            />
+                          ) : confirmId === item.id ? (
+                            <span className="inline-flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(item.id)}
+                                className="text-xs font-semibold text-danger hover:underline"
+                              >
+                                Удалить
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmId(null)}
+                                className="text-xs text-muted hover:text-ink"
+                              >
+                                Отмена
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmId(item.id)}
+                              className="text-subtle transition-colors hover:text-danger"
+                              title="Удалить клиента"
+                              aria-label="Удалить клиента"
+                            >
+                              <Trash2 size={15} />
+                            </button>
                           )}
                         </td>
                       </tr>

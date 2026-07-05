@@ -408,6 +408,27 @@ async def update_client(
     return result
 
 
+@router.delete("/{session_id}")
+async def delete_session(
+    session_id: Annotated[str, Path()],
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Полное удаление клиента (строки checklists) — безвозвратно.
+    Доступ — общий пул (любой аутентифицированный менеджер школы)."""
+    session_manager = get_session_manager()
+    try:
+        await session_manager.delete_session(db, session_id, manager)
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception as exc:
+        logger.exception("delete_session failed")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+    return {"ok": True}
+
+
 @router.post("/{session_id}/advice", response_model=ClientAdvice)
 async def client_advice(
     session_id: Annotated[str, Path()],

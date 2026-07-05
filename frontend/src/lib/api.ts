@@ -337,6 +337,15 @@ export async function apiUpdateClient(
   return res.json();
 }
 
+/** Полное удаление клиента (чеклиста) — безвозвратно. */
+export async function apiDeleteSession(sessionId: string): Promise<void> {
+  if (USE_MOCK) {
+    await wait(300);
+    return;
+  }
+  await request(`/api/session/${sessionId}`, { method: "DELETE" });
+}
+
 /* ----------------- База знаний и AI-советник ----------------- */
 
 /** Сгенерировать план работы с клиентом (на основе базы школы). */

@@ -333,6 +333,21 @@ class SessionManager:
             await db.commit()
             return {"client_name": row.client_name, "client_date": row.client_date}
 
+    async def delete_session(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        manager: Manager,
+    ) -> None:
+        """Полное удаление клиента (строки checklists) — безвозвратно.
+        Доступ — общий пул (любой аутентифицированный менеджер)."""
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+            await db.delete(row)
+            await db.commit()
+        self._locks.pop(session_id, None)
+
     async def create_from_text(
         self,
         db: AsyncSession,

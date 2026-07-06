@@ -28,6 +28,7 @@ import type {
   DealInfo,
   DealUpdate,
   FunnelColumn,
+  ImportResult,
   LeadStage,
   Manager,
   ResultsResponse,
@@ -369,6 +370,51 @@ export async function apiDeleteSession(sessionId: string): Promise<void> {
     return;
   }
   await request(`/api/session/${sessionId}`, { method: "DELETE" });
+}
+
+/**
+ * Импорт клиентов из CSV (admin). commit=false → превью (разбор без записи),
+ * commit=true → создаёт карточки. Дедуп по email.
+ */
+export async function apiImportClients(
+  csv: string,
+  commit: boolean,
+): Promise<ImportResult> {
+  if (USE_MOCK) {
+    await wait(600);
+    const lines = csv.split(/\r?\n/).filter((l) => l.trim());
+    const dataRows = Math.max(0, lines.length - 1);
+    if (!commit) {
+      const sample = lines.slice(1, 6).map((l) => {
+        const c = l.split(/[,;]/);
+        return {
+          client_name: (c[0] || "—").trim(),
+          email: (c[1] || "").trim(),
+          phone: (c[2] || "").trim(),
+          channel: null,
+          note: "",
+          stage: "new",
+          client_date: "",
+          price: null,
+          product: null,
+        };
+      });
+      return {
+        ok: true,
+        preview: true,
+        total_rows: dataRows,
+        column_mapping: { "колонка 1": "client_name", "колонка 2": "email" },
+        sample,
+      };
+    }
+    return { ok: true, created: dataRows, skipped: 0, total_rows: dataRows };
+  }
+  const res = await request("/api/import/clients", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv, commit }),
+  });
+  return res.json();
 }
 
 /* ----------------- База знаний и AI-советник ----------------- */

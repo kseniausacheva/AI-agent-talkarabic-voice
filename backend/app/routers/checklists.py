@@ -1,16 +1,21 @@
 """Дашборд: список чеклистов (с пагинацией и поиском) и статистика (admin)."""
+import csv as _csv
+import io as _io
 import json
 import logging
 import re
+import uuid as _uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.questions_template import questions_for_round
 from app.db import Checklist, Manager, get_session as get_db_session
+from app.models.checklist import ContactInfo, DealInfo, LeadInsights
 from app.services.auth import get_current_manager, require_admin
 
 router = APIRouter(prefix="/api", tags=["checklists"])
@@ -468,3 +473,194 @@ async def sales_report(
         "deals": deals,
         "available_months": available_months,
     }
+
+
+# --------------------- Импорт клиентов из CSV ---------------------
+
+_IMPORT_HEADER_MAP = {
+    "client_name": ["имя", "фио", "name", "клиент", "client", "контакт", "contact"],
+    "phone": ["телефон", "phone", "тел", "номер", "mobile", "моб"],
+    "email": ["email", "почта", "mail", "e-mail", "эл.почта", "эл почта"],
+    "channel": ["мессенджер", "канал", "channel", "messenger", "связь"],
+    "note": ["заметка", "комментарий", "note", "примечание", "comment", "коммент", "описание"],
+    "stage": ["стадия", "stage", "статус", "status"],
+    "client_date": ["дата", "date", "создан", "created"],
+    "city": ["город", "city"],
+    "product": ["продукт", "product", "тариф"],
+    "price": ["стоимость", "цена", "price", "сумма", "amount"],
+}
+_IMPORT_STAGE_WORDS = {
+    "новый": "new", "new": "new", "тёплый": "warm", "теплый": "warm", "warm": "warm",
+    "горячий": "hot", "hot": "hot", "отказ": "rejected", "rejected": "rejected",
+}
+_IMPORT_PRODUCT_WORDS = {
+    "индивид": "individual", "individual": "individual", "курс": "course",
+    "поток": "course", "course": "course", "платформ": "platform", "platform": "platform",
+}
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+
+
+def _import_channel(*texts: str) -> Optional[str]:
+    t = " ".join(x for x in texts if x).lower()
+    if any(w in t for w in ("whatsapp", "вотсап", "ватсап", "вацап", "wa ")):
+        return "whatsapp"
+    if any(w in t for w in ("telegram", "телеграм", " тг", "@")):
+        return "telegram"
+    if any(w in t for w in ("instagram", "инстаграм", "инст")):
+        return "instagram"
+    return None
+
+
+def _import_date(s: str) -> str:
+    s = (s or "").strip().split(" ")[0].split("T")[0]
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})$", s)
+    if m:
+        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})$", s)  # M/D/YYYY
+    if m:
+        return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})$", s)  # D.M.YYYY
+    if m:
+        return f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+    return ""
+
+
+def _parse_import_csv(text: str):
+    """CSV-текст → (записи, {заголовок: поле}). Автоопределение колонок."""
+    sample = text[:4000]
+    delim = ";" if sample.count(";") > sample.count(",") else ","
+    reader = _csv.reader(_io.StringIO(text), delimiter=delim)
+    rows = [r for r in reader if any((c or "").strip() for c in r)]
+    if len(rows) < 2:
+        return [], {}
+    headers = rows[0]
+    mapping: dict[int, str] = {}
+    used: set[str] = set()
+    for i, h in enumerate(headers):
+        hn = (h or "").strip().lower()
+        for field, kws in _IMPORT_HEADER_MAP.items():
+            if field in used:
+                continue
+            if any(kw in hn for kw in kws):
+                mapping[i] = field
+                used.add(field)
+                break
+    out = []
+    for r in rows[1:]:
+        rec = {mapping[i]: (r[i].strip() if i < len(r) else "") for i in mapping}
+        em = ""
+        if rec.get("email"):
+            mm = _EMAIL_RE.search(rec["email"])
+            em = mm.group(0).lower() if mm else ""
+        phone = rec.get("phone", "").strip()
+        name = (
+            rec.get("client_name", "").strip()
+            or (em.split("@")[0] if em else "")
+            or phone
+            or "Клиент из импорта"
+        )
+        channel = _import_channel(rec.get("channel", "")) or _import_channel(
+            rec.get("note", ""), rec.get("phone", "")
+        )
+        note = rec.get("note", "").strip()
+        if rec.get("city"):
+            note = (note + " · " if note else "") + "Город: " + rec["city"].strip()
+        stage = _IMPORT_STAGE_WORDS.get(rec.get("stage", "").strip().lower(), "new")
+        price = None
+        if rec.get("price"):
+            digits = re.sub(r"[^\d.]", "", rec["price"])
+            try:
+                price = float(digits) if digits else None
+            except ValueError:
+                price = None
+        product = None
+        pw = rec.get("product", "").strip().lower()
+        for k, v in _IMPORT_PRODUCT_WORDS.items():
+            if k in pw:
+                product = v
+                break
+        out.append({
+            "client_name": name, "email": em, "phone": phone, "channel": channel,
+            "note": note, "stage": stage, "client_date": _import_date(rec.get("client_date", "")),
+            "price": price, "product": product,
+        })
+    return out, {headers[i]: f for i, f in mapping.items()}
+
+
+class ImportRequest(BaseModel):
+    csv: str
+    commit: bool = False
+
+
+@router.post("/import/clients")
+async def import_clients(
+    payload: ImportRequest,
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Импорт клиентов из CSV (admin). commit=false → превью (разбор без записи);
+    commit=true → создаёт карточки клиентов. Дедуп по email."""
+    records, colmap = _parse_import_csv(payload.csv)
+    if not records:
+        return {
+            "ok": False,
+            "detail": "Не распознал строки. Нужна строка заголовков и хотя бы одна строка данных.",
+            "column_mapping": colmap,
+        }
+    if not payload.commit:
+        return {
+            "ok": True,
+            "preview": True,
+            "total_rows": len(records),
+            "column_mapping": colmap,
+            "sample": records[:8],
+        }
+
+    existing: set[str] = set()
+    res = await db.execute(
+        select(Checklist.contact_json).where(Checklist.contact_json.isnot(None))
+    )
+    for (cj,) in res.all():
+        try:
+            e = (json.loads(cj).get("email") or "").lower().strip()
+            if e:
+                existing.add(e)
+        except Exception:
+            pass
+
+    now = datetime.now(timezone.utc).isoformat()
+    created = 0
+    skipped = 0
+    for rec in records:
+        em = rec["email"]
+        if em and em in existing:
+            skipped += 1
+            continue
+        ci = ContactInfo(
+            phone=rec["phone"], channel=rec["channel"], email=em,
+            note=rec["note"], next_contact_date=None, next_contact_plan="",
+        )
+        li = LeadInsights(stage=rec["stage"])
+        deal = None
+        if rec["price"] is not None or rec["product"]:
+            deal = DealInfo(product=rec["product"], price=rec["price"])
+        cdate = rec["client_date"] or now[:10]
+        name = rec["client_name"]
+        md = (
+            "# Импортированный клиент\n\n"
+            f"- **Клиент:** {name}\n- **Дата:** {cdate}\n\n"
+            "_Загружено через импорт CSV._\n"
+        )
+        db.add(Checklist(
+            id=_uuid.uuid4().hex[:12], manager_id=manager.id, client_name=name,
+            client_date=cdate, status="completed", created_at=now, completed_at=now,
+            answers_json="[]", summaries_json="[]", checklist_json="[]", markdown=md,
+            insights_json=li.model_dump_json(),
+            deal_json=(deal.model_dump_json() if deal else None),
+            contact_json=ci.model_dump_json(),
+        ))
+        if em:
+            existing.add(em)
+        created += 1
+    await db.commit()
+    return {"ok": True, "created": created, "skipped": skipped, "total_rows": len(records)}

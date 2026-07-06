@@ -286,6 +286,31 @@ export type ClientAdvice = {
   touchpoints: AdviceTouch[];
 };
 
+/** Одна распознанная строка при импорте клиентов из CSV. */
+export type ImportRow = {
+  client_name: string;
+  email: string;
+  phone: string;
+  channel: string | null;
+  note: string;
+  stage: string;
+  client_date: string;
+  price: number | null;
+  product: string | null;
+};
+
+/** Ответ импортёра клиентов (превью или результат записи). */
+export type ImportResult = {
+  ok: boolean;
+  preview?: boolean;
+  total_rows?: number;
+  column_mapping?: Record<string, string>;
+  sample?: ImportRow[];
+  created?: number;
+  skipped?: number;
+  detail?: string;
+};
+
 export type RecorderState =
   | "idle"
   | "recording"

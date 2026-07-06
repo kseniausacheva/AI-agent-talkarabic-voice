@@ -74,6 +74,9 @@ export function AppHeader() {
                 <HeaderLink href="/knowledge" active={pathname === "/knowledge"}>
                   База
                 </HeaderLink>
+                <HeaderLink href="/import" active={pathname === "/import"}>
+                  Импорт
+                </HeaderLink>
               </>
             )}
             {manager && (

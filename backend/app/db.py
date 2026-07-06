@@ -92,6 +92,26 @@ class AppSetting(Base):
     updated_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
 
+class Subscriber(Base):
+    """Подписчик email-рассылки (база для newsletter). unsubscribed=1 — отписан."""
+
+    __tablename__ = "subscribers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(
+        String(255), unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    group_tag: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    unsubscribed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    unsub_token: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+
+
 # Миграции: колонка → DDL (добавляется, если PRAGMA её не видит)
 _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",

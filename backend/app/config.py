@@ -59,6 +59,19 @@ class Settings(BaseSettings):
         default="", description="Секрет для POST /api/cron/* (пусто = cron выключен)"
     )
 
+    # Email-рассылки (Brevo)
+    brevo_api_key: str = Field(
+        default="", description="Brevo API key (xkeysib-...); пусто = рассылка выключена"
+    )
+    brevo_sender_email: str = Field(
+        default="", description="Email отправителя (должен быть verified в Brevo)"
+    )
+    brevo_sender_name: str = Field(default="Школа арабского Talkarabic")
+    public_api_url: str = Field(
+        default="https://api.talkarabicnow.online",
+        description="Базовый URL бэкенда — для ссылок отписки в письмах",
+    )
+
     # CORS
     allowed_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000"

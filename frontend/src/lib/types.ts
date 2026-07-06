@@ -311,6 +311,24 @@ export type ImportResult = {
   detail?: string;
 };
 
+/** Сводка по базе email-рассылки (GET /api/subscribers). */
+export type SubscribersInfo = {
+  total: number;
+  unsubscribed: number;
+  groups: { group: string; count: number }[];
+  configured: boolean;
+  sender: string | null;
+};
+
+/** Результат отправки выпуска (POST /api/broadcast). */
+export type BroadcastResult = {
+  ok: boolean;
+  queued?: number;
+  sent?: number;
+  test?: boolean;
+  detail?: string;
+};
+
 export type RecorderState =
   | "idle"
   | "recording"

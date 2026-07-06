@@ -25,10 +25,12 @@ import type {
   ClientUpdate,
   ContactInfo,
   ContactUpdate,
+  BroadcastResult,
   DealInfo,
   DealUpdate,
   FunnelColumn,
   ImportResult,
+  SubscribersInfo,
   LeadStage,
   Manager,
   ResultsResponse,
@@ -413,6 +415,48 @@ export async function apiImportClients(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ csv, commit }),
+  });
+  return res.json();
+}
+
+/* ----------------------- Email-рассылка ----------------------- */
+
+/** Сводка по базе рассылки (admin). */
+export async function apiSubscribers(): Promise<SubscribersInfo> {
+  if (USE_MOCK) {
+    await wait(300);
+    return {
+      total: 128,
+      unsubscribed: 2,
+      groups: [
+        { group: "Египетский диалект", count: 106 },
+        { group: "Халиджи", count: 14 },
+        { group: "Курс 2 (Египетский)", count: 8 },
+      ],
+      configured: true,
+      sender: "info@talkarabicnow.online",
+    };
+  }
+  const res = await request("/api/subscribers");
+  return res.json();
+}
+
+/** Отправить выпуск. test_email → тест-письмо; иначе рассылка по группе. */
+export async function apiBroadcast(payload: {
+  subject: string;
+  text: string;
+  group?: string | null;
+  test_email?: string | null;
+}): Promise<BroadcastResult> {
+  if (USE_MOCK) {
+    await wait(700);
+    if (payload.test_email) return { ok: true, test: true, sent: 1 };
+    return { ok: true, queued: 106 };
+  }
+  const res = await request("/api/broadcast", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
   return res.json();
 }

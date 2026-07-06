@@ -7,7 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import auth, checklists, cron, health, knowledge, session
+from app.routers import (
+    auth,
+    checklists,
+    cron,
+    health,
+    knowledge,
+    mailing,
+    session,
+)
 from app.services.transcription import get_transcription_service
 
 
@@ -58,6 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(checklists.router)
     app.include_router(cron.router)
     app.include_router(knowledge.router)
+    app.include_router(mailing.router)
     return app
 
 

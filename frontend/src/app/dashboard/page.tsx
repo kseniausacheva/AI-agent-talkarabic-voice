@@ -4,18 +4,24 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
   Loader2,
   Plus,
   Search,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
-import { apiChecklists, apiDeleteSession } from "@/lib/api";
-import type { ChecklistListItem, ChecklistsResponse } from "@/lib/types";
+import { apiChecklists, apiDeleteSession, apiSales } from "@/lib/api";
+import type {
+  ChecklistListItem,
+  ChecklistsResponse,
+  SalesReport,
+} from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 const PER_PAGE = 20;
@@ -29,6 +35,58 @@ const STAGE_LABELS: Record<string, string> = {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+const MONTHS_NOM = [
+  "январь", "февраль", "март", "апрель", "май", "июнь",
+  "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+];
+const MONTHS_GEN = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+
+/** "2026-07" → "июль 2026". */
+function monthTitle(ym: string): string {
+  const [year, month] = ym.split("-");
+  return `${MONTHS_NOM[Number(month) - 1] ?? ym} ${year}`;
+}
+
+/** "2026-07-01" → "1 июля". */
+function dayMonth(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTHS_GEN[Number(month) - 1] ?? month}`;
+}
+
+/** period_start/end → "1 июля — 1 августа". */
+function rangeLabel(start: string, end: string): string {
+  return `${dayMonth(start)} — ${dayMonth(end)}`;
+}
+
+function Metric({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div>
+      <div
+        className={cn(
+          "tabular-nums text-ink",
+          strong
+            ? "font-display text-[1.6rem] sm:text-[2rem] leading-none"
+            : "text-xl font-semibold",
+        )}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-xs text-muted">{label}</div>
+    </div>
+  );
 }
 
 function formatRub(n: number): string {
@@ -65,6 +123,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [sales, setSales] = useState<SalesReport | null>(null);
 
   async function handleDelete(itemId: string) {
     setDeletingId(itemId);
@@ -124,6 +183,21 @@ export default function DashboardPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await apiSales();
+        if (!cancelled) setSales(s);
+      } catch {
+        // Сводка по деньгам необязательна на дашборде.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.per_page)) : 1;
   const today = todayISO();
 
@@ -168,6 +242,44 @@ export default function DashboardPage() {
               </Link>
             </div>
           </div>
+
+          {sales && (
+            <section className="mb-8 rounded-2xl border border-line bg-surface/50 p-5 sm:p-6">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+                  <Wallet size={14} />
+                  Деньги · {monthTitle(sales.month)}
+                </h2>
+                <Link
+                  href="/stats"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Подробный отчёт →
+                </Link>
+              </div>
+              <div className="grid grid-cols-3 gap-4 sm:gap-6">
+                <Metric label="Заработано" value={formatRub(sales.revenue)} strong />
+                <Metric
+                  label="Закрыто сделок"
+                  value={String(sales.closed_count)}
+                />
+                <Metric
+                  label="Средний чек"
+                  value={
+                    sales.avg_check !== null ? formatRub(sales.avg_check) : "—"
+                  }
+                />
+              </div>
+              <p className="mt-4 text-xs text-subtle">
+                Период {rangeLabel(sales.period_start, sales.period_end)} · ждут
+                оплаты:{" "}
+                <span className="tabular-nums">{sales.pending_count}</span> на{" "}
+                <span className="tabular-nums">
+                  {formatRub(sales.pending_revenue)}
+                </span>
+              </p>
+            </section>
+          )}
 
           {error && (
             <p className="text-sm text-danger mb-6" role="alert">
@@ -286,16 +398,23 @@ export default function DashboardPage() {
                         <td className="px-4 py-3.5 tabular-nums text-ink">
                           {item.lead_score ?? "—"}
                         </td>
-                        <td
-                          className={cn(
-                            "px-4 py-3.5 font-mono text-xs tabular-nums whitespace-nowrap",
-                            item.next_contact_date &&
-                              item.next_contact_date < today
-                              ? "text-accent"
-                              : "text-muted",
+                        <td className="px-4 py-3.5 whitespace-nowrap">
+                          {item.next_contact_date ? (
+                            <span
+                              title={`Связаться ${item.next_contact_date}`}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums",
+                                item.next_contact_date < today
+                                  ? "bg-accent/12 text-accent"
+                                  : "bg-primary/10 text-primary",
+                              )}
+                            >
+                              <Bell size={12} />
+                              {item.next_contact_date}
+                            </span>
+                          ) : (
+                            <span className="text-subtle">—</span>
                           )}
-                        >
-                          {item.next_contact_date ?? "—"}
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <DealCell item={item} />

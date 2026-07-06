@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Bell, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
@@ -37,6 +37,12 @@ function formatRub(n: number): string {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** "2026-07-09" → "09.07". */
+function shortDate(iso: string): string {
+  const [, m, d] = iso.split("-");
+  return `${d}.${m}`;
 }
 
 export default function PipelinePage() {
@@ -196,14 +202,16 @@ export default function PipelinePage() {
                             )}
                             {c.next_contact_date && !c.paid && (
                               <span
+                                title={`Связаться ${c.next_contact_date}`}
                                 className={cn(
-                                  "font-mono tabular-nums",
+                                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums",
                                   c.next_contact_date < today
-                                    ? "text-accent"
-                                    : "text-subtle",
+                                    ? "bg-accent/12 text-accent"
+                                    : "bg-primary/10 text-primary",
                                 )}
                               >
-                                {c.next_contact_date}
+                                <Bell size={11} />
+                                {shortDate(c.next_contact_date)}
                               </span>
                             )}
                           </div>

@@ -1,7 +1,8 @@
 """Дашборд: список чеклистов (с пагинацией и поиском) и статистика (admin)."""
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -21,7 +22,7 @@ SKIP_LABEL_MAX_LEN = 60
 _ALL_QUESTIONS = [q for r in (1, 2, 3) for q in questions_for_round(r)]
 
 _STAGES = ("new", "warm", "hot", "rejected")
-_PRODUCT_TYPES = ("individual", "course", "undecided")
+_PRODUCT_TYPES = ("individual", "course", "platform", "undecided")
 _OBJECTION_TYPES = ("price", "time", "tech", "trust", "other")
 
 
@@ -186,6 +187,21 @@ def _parse_utc_date(iso_value: Optional[str]):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).date()
+
+
+def _month_bounds(month: Optional[str]) -> tuple[date, date, str]:
+    """(начало, конец-исключительно, 'YYYY-MM') для месяца. Период — с 1-го числа
+    месяца по 1-е следующего. По умолчанию (или битый month) — текущий месяц UTC."""
+    today = datetime.now(timezone.utc).date()
+    if month and re.fullmatch(r"\d{4}-\d{2}", month):
+        year, mon = int(month[:4]), int(month[5:7])
+        if not 1 <= mon <= 12:
+            year, mon = today.year, today.month
+    else:
+        year, mon = today.year, today.month
+    start = date(year, mon, 1)
+    end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
+    return start, end, f"{year:04d}-{mon:02d}"
 
 
 @router.get("/stats")
@@ -360,4 +376,82 @@ async def stats(
         "stage_counts": stage_counts,
         "sales": sales,
         "objection_counts": objection_counts,
+    }
+
+
+@router.get("/sales")
+async def sales_report(
+    month: Optional[str] = Query(
+        default=None, description="YYYY-MM; по умолчанию текущий месяц (UTC)"
+    ),
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Отчёт по деньгам за период (1-е число месяца → 1-е следующего):
+    заработано (оплачено в периоде), закрытые сделки, средний чек, по продуктам,
+    ожидающие оплаты. Общий пул — доступно любому менеджеру школы.
+
+    available_months — месяцы, где были закрытые сделки (для селектора)."""
+    start, end, ym = _month_bounds(month)
+    rows = (
+        await db.execute(
+            select(Checklist.completed_at, Checklist.deal_json).where(
+                Checklist.status == "completed"
+            )
+        )
+    ).all()
+
+    revenue = 0.0
+    closed_count = 0
+    pending_revenue = 0.0
+    pending_count = 0
+    by_product = {p: 0 for p in _PRODUCT_TYPES}
+    months: set[str] = set()
+
+    for completed_at, deal_json in rows:
+        if not deal_json:
+            continue
+        try:
+            deal = json.loads(deal_json)
+        except ValueError:
+            continue
+        if not isinstance(deal, dict):
+            continue
+        price = deal.get("price")
+        has_price = (
+            isinstance(price, (int, float))
+            and not isinstance(price, bool)
+            and price > 0
+        )
+        if not has_price:
+            continue
+        if deal.get("paid"):
+            paid_on = _parse_utc_date(deal.get("paid_date")) or _parse_utc_date(
+                completed_at
+            )
+            if paid_on is None:
+                continue
+            months.add(f"{paid_on.year:04d}-{paid_on.month:02d}")
+            if start <= paid_on < end:
+                revenue += float(price)
+                closed_count += 1
+                product = deal.get("product")
+                if product in by_product:
+                    by_product[product] += 1
+        else:
+            pending_revenue += float(price)
+            pending_count += 1
+
+    available_months = sorted(months | {ym}, reverse=True)
+    return {
+        "month": ym,
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "revenue": round(revenue, 2),
+        "closed_count": closed_count,
+        "avg_check": round(revenue / closed_count, 2) if closed_count else None,
+        "pending_count": pending_count,
+        "pending_revenue": round(pending_revenue, 2),
+        "by_product": by_product,
+        "available_months": available_months,
     }

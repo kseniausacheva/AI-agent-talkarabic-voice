@@ -101,6 +101,25 @@ export type SalesStats = {
   by_product: { individual: number; course: number; undecided: number };
 };
 
+/** Отчёт по деньгам за период (1-е → 1-е). Эндпоинт GET /api/sales. */
+export type SalesReport = {
+  month: string; // YYYY-MM
+  period_start: string; // YYYY-MM-01
+  period_end: string; // 1-е следующего месяца
+  revenue: number;
+  closed_count: number;
+  avg_check: number | null;
+  pending_count: number;
+  pending_revenue: number;
+  by_product: {
+    individual: number;
+    course: number;
+    platform: number;
+    undecided: number;
+  };
+  available_months: string[]; // YYYY-MM, по убыванию
+};
+
 export type StatsResponse = {
   total_completed: number;
   completed_this_week: number;

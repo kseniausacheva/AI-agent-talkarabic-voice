@@ -10,6 +10,7 @@ import type {
   Manager,
   Question,
   QuestionSkipStat,
+  SalesReport,
   SessionStartResponse,
   StatsResponse,
   SubmitRoundResponse,
@@ -420,6 +421,45 @@ export function mockStats(): StatsResponse {
       by_product: { individual: 3, course: 2, undecided: 0 },
     },
     objection_counts: { price: 8, time: 5, tech: 2, trust: 3, other: 1 },
+  };
+}
+
+export function mockSales(month?: string): SalesReport {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ym =
+    month && /^\d{4}-\d{2}$/.test(month)
+      ? month
+      : `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const [y, m] = ym.split("-").map(Number);
+  const endY = m === 12 ? y + 1 : y;
+  const endM = m === 12 ? 1 : m + 1;
+  const cur = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const isCurrent = ym === cur;
+  const revenue = isCurrent ? 78000 : 45000;
+  const closed = isCurrent ? 3 : 2;
+  const months: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+  }
+  if (!months.includes(ym)) months.push(ym);
+  return {
+    month: ym,
+    period_start: `${ym}-01`,
+    period_end: `${endY}-${pad(endM)}-01`,
+    revenue,
+    closed_count: closed,
+    avg_check: closed ? Math.round(revenue / closed) : null,
+    pending_count: 2,
+    pending_revenue: 52000,
+    by_product: {
+      individual: isCurrent ? 2 : 1,
+      course: 1,
+      platform: isCurrent ? 1 : 0,
+      undecided: 0,
+    },
+    available_months: [...new Set(months)].sort().reverse(),
   };
 }
 

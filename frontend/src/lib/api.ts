@@ -9,6 +9,7 @@ import {
   mockChecklists,
   mockKnowledgeState,
   mockResults,
+  mockSales,
   mockStart,
   mockStats,
   mockSubmit,
@@ -30,6 +31,7 @@ import type {
   LeadStage,
   Manager,
   ResultsResponse,
+  SalesReport,
   SessionStartResponse,
   StatsResponse,
   SubmitRoundResponse,
@@ -465,5 +467,21 @@ export async function apiStats(): Promise<StatsResponse> {
     return mockStats();
   }
   const res = await request("/api/stats");
+  return res.json();
+}
+
+/**
+ * Отчёт по деньгам за период (1-е → 1-е). month = YYYY-MM (по умолчанию текущий).
+ * Доступно всей команде (общий пул).
+ */
+export async function apiSales(month?: string): Promise<SalesReport> {
+  if (USE_MOCK) {
+    await wait(350);
+    return mockSales(month);
+  }
+  const path = month
+    ? `/api/sales?month=${encodeURIComponent(month)}`
+    : "/api/sales";
+  const res = await request(path);
   return res.json();
 }

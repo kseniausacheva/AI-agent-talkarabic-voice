@@ -5,14 +5,23 @@ import { Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
-import { apiMe, apiStats } from "@/lib/api";
-import type { ObjectionCounts, StatsResponse } from "@/lib/types";
+import { apiMe, apiSales, apiStats } from "@/lib/api";
+import type { ObjectionCounts, SalesReport, StatsResponse } from "@/lib/types";
 
 export default function StatsPage() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [sales, setSales] = useState<SalesReport | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  async function changeMonth(m: string) {
+    try {
+      setSales(await apiSales(m));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +56,12 @@ export default function StatsPage() {
               other: 0,
             },
           });
+        try {
+          const salesData = await apiSales();
+          if (!cancelled) setSales(salesData);
+        } catch {
+          // отчёт по деньгам необязателен — если backend старый, просто скрыт
+        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
       } finally {
@@ -143,67 +158,91 @@ export default function StatsPage() {
                 </div>
               </div>
 
-              <section className="mb-12">
-                <h2 className="text-base font-semibold text-ink mb-1">
-                  Продажи за {monthLabel(stats.sales.month)}
-                </h2>
-                <p className="text-xs text-muted mb-4">
-                  Закрытые сделки (оплачено) за текущий месяц.
-                </p>
-                <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3 mb-px">
-                  <BigNumber
-                    label="Выручка"
-                    value={formatRub(stats.sales.revenue)}
-                  />
-                  <BigNumber
-                    label="Закрыто сделок"
-                    value={stats.sales.closed_count}
-                  />
-                  <BigNumber
-                    label="Средний чек"
-                    value={
-                      stats.sales.avg_check !== null
-                        ? formatRub(stats.sales.avg_check)
-                        : "—"
-                    }
-                  />
-                </div>
-                <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-2">
-                  <div className="bg-bg p-6 sm:p-7">
-                    <div className="text-sm text-ink mb-1">
-                      <span className="font-semibold tabular-nums">
-                        {stats.sales.pending_count}
-                      </span>{" "}
-                      сделок ждут оплаты на{" "}
-                      <span className="font-semibold tabular-nums">
-                        {formatRub(stats.sales.pending_revenue)}
-                      </span>
+              {sales && (
+                <section className="mb-12">
+                  <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-semibold text-ink mb-1">
+                        Деньги за {monthLabel(sales.month)}
+                      </h2>
+                      <p className="text-xs text-muted">
+                        Период {rangeLabel(sales.period_start, sales.period_end)}
+                        . «Заработано» — сделки, оплаченные в этом периоде.
+                      </p>
                     </div>
-                    <div className="text-xs text-muted">
-                      Потенциал: цена названа, оплата не подтверждена
+                    <label className="inline-flex items-center gap-2 text-xs text-muted">
+                      Месяц
+                      <select
+                        value={sales.month}
+                        onChange={(e) => changeMonth(e.target.value)}
+                        className="h-9 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        {sales.available_months.map((m) => (
+                          <option key={m} value={m}>
+                            {monthLabel(m)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-3 mb-px">
+                    <BigNumber label="Заработано" value={formatRub(sales.revenue)} />
+                    <BigNumber
+                      label="Закрыто сделок"
+                      value={sales.closed_count}
+                    />
+                    <BigNumber
+                      label="Средний чек"
+                      value={
+                        sales.avg_check !== null
+                          ? formatRub(sales.avg_check)
+                          : "—"
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-px bg-line rounded-2xl overflow-hidden border border-line sm:grid-cols-2">
+                    <div className="bg-bg p-6 sm:p-7">
+                      <div className="text-sm text-ink mb-1">
+                        <span className="font-semibold tabular-nums">
+                          {sales.pending_count}
+                        </span>{" "}
+                        сделок ждут оплаты на{" "}
+                        <span className="font-semibold tabular-nums">
+                          {formatRub(sales.pending_revenue)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted">
+                        Потенциал: цена названа, оплата не подтверждена
+                      </div>
+                    </div>
+                    <div className="bg-bg p-6 sm:p-7">
+                      <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-1 text-sm text-ink">
+                        <span>
+                          Индивид.{" "}
+                          <span className="font-semibold tabular-nums">
+                            {sales.by_product.individual}
+                          </span>
+                        </span>
+                        <span>
+                          Курс{" "}
+                          <span className="font-semibold tabular-nums">
+                            {sales.by_product.course}
+                          </span>
+                        </span>
+                        <span>
+                          Платформа{" "}
+                          <span className="font-semibold tabular-nums">
+                            {sales.by_product.platform}
+                          </span>
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted">
+                        Закрытые сделки по продукту
+                      </div>
                     </div>
                   </div>
-                  <div className="bg-bg p-6 sm:p-7">
-                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-1 text-sm text-ink">
-                      <span>
-                        Индивидуально{" "}
-                        <span className="font-semibold tabular-nums">
-                          {stats.sales.by_product.individual}
-                        </span>
-                      </span>
-                      <span>
-                        Курс · поток{" "}
-                        <span className="font-semibold tabular-nums">
-                          {stats.sales.by_product.course}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted">
-                      Закрытые сделки по продукту
-                    </div>
-                  </div>
-                </div>
-              </section>
+                </section>
+              )}
 
               <section className="mb-12">
                 <h2 className="text-base font-semibold text-ink mb-1">
@@ -359,6 +398,22 @@ const MONTHS = [
 function monthLabel(ym: string): string {
   const [year, month] = ym.split("-");
   return `${MONTHS[Number(month) - 1] ?? ym} ${year}`;
+}
+
+const MONTHS_GEN = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+
+/** "2026-07-01" → "1 июля". */
+function dayMonth(iso: string): string {
+  const [, month, day] = iso.split("-");
+  return `${Number(day)} ${MONTHS_GEN[Number(month) - 1] ?? month}`;
+}
+
+/** period_start/end → "1 июля — 1 августа". */
+function rangeLabel(start: string, end: string): string {
+  return `${dayMonth(start)} — ${dayMonth(end)}`;
 }
 
 function formatRub(n: number): string {

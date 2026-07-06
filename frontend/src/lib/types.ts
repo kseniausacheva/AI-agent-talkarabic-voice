@@ -101,6 +101,14 @@ export type SalesStats = {
   by_product: { individual: number; course: number; undecided: number };
 };
 
+/** Одна закрытая (оплаченная) сделка периода — для разбивки комиссии. */
+export type SalesDeal = {
+  client_name: string;
+  price: number;
+  product: ProductType | null;
+  paid_date: string; // YYYY-MM-DD
+};
+
 /** Отчёт по деньгам за период (1-е → 1-е). Эндпоинт GET /api/sales. */
 export type SalesReport = {
   month: string; // YYYY-MM
@@ -117,6 +125,7 @@ export type SalesReport = {
     platform: number;
     undecided: number;
   };
+  deals: SalesDeal[]; // закрытые сделки периода (для комиссии)
   available_months: string[]; // YYYY-MM, по убыванию
 };
 

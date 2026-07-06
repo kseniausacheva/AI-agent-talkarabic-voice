@@ -63,6 +63,9 @@ export function AppHeader() {
             <HeaderLink href="/pipeline" active={pathname === "/pipeline"}>
               Воронка
             </HeaderLink>
+            <HeaderLink href="/earnings" active={pathname === "/earnings"}>
+              Заработок
+            </HeaderLink>
             {manager?.role === "admin" && (
               <>
                 <HeaderLink href="/stats" active={pathname === "/stats"}>

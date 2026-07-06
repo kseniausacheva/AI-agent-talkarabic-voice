@@ -438,6 +438,16 @@ export function mockSales(month?: string): SalesReport {
   const isCurrent = ym === cur;
   const revenue = isCurrent ? 78000 : 45000;
   const closed = isCurrent ? 3 : 2;
+  const deals = isCurrent
+    ? [
+        { client_name: "Вероника Матвеева", price: 30000, product: "course" as const, paid_date: `${ym}-05` },
+        { client_name: "Мукаев Муслим", price: 26000, product: "individual" as const, paid_date: `${ym}-04` },
+        { client_name: "Руза", price: 22000, product: "platform" as const, paid_date: `${ym}-02` },
+      ]
+    : [
+        { client_name: "Клиент А", price: 25000, product: "individual" as const, paid_date: `${ym}-12` },
+        { client_name: "Клиент Б", price: 20000, product: "course" as const, paid_date: `${ym}-08` },
+      ];
   const months: string[] = [];
   for (let i = 0; i < 4; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -459,6 +469,7 @@ export function mockSales(month?: string): SalesReport {
       platform: isCurrent ? 1 : 0,
       undecided: 0,
     },
+    deals,
     available_months: [...new Set(months)].sort().reverse(),
   };
 }

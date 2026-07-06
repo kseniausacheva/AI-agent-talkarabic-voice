@@ -395,9 +395,11 @@ async def sales_report(
     start, end, ym = _month_bounds(month)
     rows = (
         await db.execute(
-            select(Checklist.completed_at, Checklist.deal_json).where(
-                Checklist.status == "completed"
-            )
+            select(
+                Checklist.client_name,
+                Checklist.completed_at,
+                Checklist.deal_json,
+            ).where(Checklist.status == "completed")
         )
     ).all()
 
@@ -407,8 +409,9 @@ async def sales_report(
     pending_count = 0
     by_product = {p: 0 for p in _PRODUCT_TYPES}
     months: set[str] = set()
+    deals: list[dict] = []  # закрытые сделки периода — для разбивки комиссии
 
-    for completed_at, deal_json in rows:
+    for client_name, completed_at, deal_json in rows:
         if not deal_json:
             continue
         try:
@@ -438,10 +441,19 @@ async def sales_report(
                 product = deal.get("product")
                 if product in by_product:
                     by_product[product] += 1
+                deals.append(
+                    {
+                        "client_name": client_name or "—",
+                        "price": float(price),
+                        "product": product if product in by_product else None,
+                        "paid_date": paid_on.isoformat(),
+                    }
+                )
         else:
             pending_revenue += float(price)
             pending_count += 1
 
+    deals.sort(key=lambda d: d["paid_date"], reverse=True)
     available_months = sorted(months | {ym}, reverse=True)
     return {
         "month": ym,
@@ -453,5 +465,6 @@ async def sales_report(
         "pending_count": pending_count,
         "pending_revenue": round(pending_revenue, 2),
         "by_product": by_product,
+        "deals": deals,
         "available_months": available_months,
     }

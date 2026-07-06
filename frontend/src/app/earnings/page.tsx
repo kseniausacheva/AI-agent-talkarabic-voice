@@ -76,6 +76,8 @@ export default function EarningsPage() {
   }
 
   const commission = sales ? Math.round(sales.revenue * RATE) : 0;
+  // старый backend (до редеплоя) может не вернуть deals — не падаем
+  const deals = sales?.deals ?? [];
 
   return (
     <AuthGuard>
@@ -148,13 +150,13 @@ export default function EarningsPage() {
               <h2 className="text-base font-semibold text-ink mb-3">
                 Из чего складывается
               </h2>
-              {sales.deals.length === 0 ? (
+              {deals.length === 0 ? (
                 <p className="text-sm text-muted">
                   В этом периоде ещё нет закрытых сделок.
                 </p>
               ) : (
                 <div className="card divide-y divide-line overflow-hidden">
-                  {sales.deals.map((d, i) => (
+                  {deals.map((d, i) => (
                     <div
                       key={`${d.client_name}-${d.paid_date}-${i}`}
                       className="flex items-center justify-between gap-4 px-4 py-3.5 sm:px-5"

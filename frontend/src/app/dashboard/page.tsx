@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Plus,
   Search,
   Trash2,
 } from "lucide-react";
@@ -140,22 +142,31 @@ export default function DashboardPage() {
                 Все клиенты, по которым заполнялся чеклист.
               </p>
             </div>
-            <label className="relative block w-full sm:w-64">
-              <Search
-                size={15}
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle"
-              />
-              <input
-                type="search"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setPage(1);
-                }}
-                placeholder="Поиск по имени клиента…"
-                className="h-11 w-full rounded-md border border-line-strong bg-bg pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
-              />
-            </label>
+            <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+              <label className="relative block w-full sm:w-64">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle"
+                />
+                <input
+                  type="search"
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Поиск по имени клиента…"
+                  className="h-11 w-full rounded-md border border-line-strong bg-bg pl-10 pr-4 text-sm text-ink placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </label>
+              <Link
+                href="/session"
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-primary-strong px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-strong/90"
+              >
+                <Plus size={16} strokeWidth={2.5} />
+                Новый клиент
+              </Link>
+            </div>
           </div>
 
           {error && (

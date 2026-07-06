@@ -1,9 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Film, Loader2, Save, User, Wallet } from "lucide-react";
-import { apiUpdateClient, apiUpdateDeal } from "@/lib/api";
-import type { DealInfo, PlatformStatus, ProductType } from "@/lib/types";
+import {
+  CalendarClock,
+  Check,
+  Film,
+  Loader2,
+  Phone,
+  Save,
+  User,
+  Wallet,
+} from "lucide-react";
+import { apiUpdateClient, apiUpdateContact, apiUpdateDeal } from "@/lib/api";
+import type {
+  ContactChannel,
+  ContactInfo,
+  DealInfo,
+  PlatformStatus,
+  ProductType,
+} from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 const EMPTY_DEAL: DealInfo = {
@@ -18,6 +33,15 @@ const EMPTY_DEAL: DealInfo = {
   platform_status: "not_offered",
 };
 
+const EMPTY_CONTACT: ContactInfo = {
+  phone: "",
+  channel: null,
+  email: "",
+  note: "",
+  next_contact_date: null,
+  next_contact_plan: "",
+};
+
 const PRODUCTS: { key: ProductType; label: string }[] = [
   { key: "individual", label: "Индивидуально" },
   { key: "course", label: "Курс · поток" },
@@ -29,6 +53,15 @@ const PLATFORM_OPTIONS: { key: PlatformStatus; label: string }[] = [
   { key: "not_offered", label: "Не предлагали" },
   { key: "offered", label: "Предложили" },
   { key: "taken", label: "Оформил" },
+];
+
+const CHANNEL_OPTIONS: { key: ContactChannel; label: string }[] = [
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "telegram", label: "Telegram" },
+  { key: "instagram", label: "Instagram" },
+  { key: "phone", label: "Телефон" },
+  { key: "email", label: "Email" },
+  { key: "other", label: "Другое" },
 ];
 
 function priceToText(n: number | null): string {
@@ -53,29 +86,35 @@ type Snapshot = {
   paid: boolean;
   paidDate: string | null;
   platformStatus: PlatformStatus;
+  phone: string;
+  channel: ContactChannel | null;
+  email: string;
+  contactNote: string;
+  nextDate: string | null;
+  nextPlan: string;
 };
 
 /**
  * Единая карточка «Данные клиента и сделка» на странице результата.
- * ИИ заранее заполняет продукт/стоимость/намерение из разговора; менеджер
- * правит ЛЮБЫЕ поля (включая имя и дату контакта) и сохраняет ОДНОЙ кнопкой
- * «Сохранить». До нажатия ничего не отправляется — это буфер, а не автосейв.
- *
- * Отдельный блок «Платформа» — предлагали ли клиенту платформу
- * самостоятельного обучения (фильмы/песни), независимо от основного продукта.
+ * Менеджер правит ЛЮБЫЕ поля (клиент, сделка, платформа, контакты, план
+ * следующего касания) и сохраняет ОДНОЙ кнопкой «Сохранить» — буфер, не автосейв.
  */
 export function DealCard({
   sessionId,
   initialDeal,
   initialName,
   initialDate,
+  initialContact,
 }: {
   sessionId: string;
   initialDeal: DealInfo | null;
   initialName: string;
   initialDate: string;
+  initialContact: ContactInfo | null;
 }) {
   const base = initialDeal ?? EMPTY_DEAL;
+  const c = initialContact ?? EMPTY_CONTACT;
+
   const [name, setName] = useState(initialName);
   const [date, setDate] = useState(initialDate);
   const [product, setProduct] = useState<ProductType | null>(base.product);
@@ -91,6 +130,13 @@ export function DealCard({
     base.platform_status ?? "not_offered",
   );
 
+  const [phone, setPhone] = useState(c.phone);
+  const [channel, setChannel] = useState<ContactChannel | null>(c.channel);
+  const [email, setEmail] = useState(c.email);
+  const [contactNote, setContactNote] = useState(c.note);
+  const [nextDate, setNextDate] = useState<string | null>(c.next_contact_date);
+  const [nextPlan, setNextPlan] = useState(c.next_contact_plan);
+
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +151,12 @@ export function DealCard({
     paid: base.paid,
     paidDate: base.paid_date,
     platformStatus: base.platform_status ?? "not_offered",
+    phone: c.phone,
+    channel: c.channel,
+    email: c.email,
+    contactNote: c.note,
+    nextDate: c.next_contact_date,
+    nextPlan: c.next_contact_plan,
   }));
 
   const current: Snapshot = {
@@ -118,6 +170,12 @@ export function DealCard({
     paid,
     paidDate,
     platformStatus,
+    phone,
+    channel,
+    email,
+    contactNote,
+    nextDate,
+    nextPlan,
   };
   const dirty = JSON.stringify(current) !== JSON.stringify(savedSnap);
 
@@ -146,6 +204,14 @@ export function DealCard({
         paid_date: paidDate,
         platform_status: platformStatus,
       });
+      const contact = await apiUpdateContact(sessionId, {
+        phone,
+        channel,
+        email,
+        note: contactNote,
+        next_contact_date: nextDate,
+        next_contact_plan: nextPlan,
+      });
       // синхронизируем поля с тем, что реально сохранил бэкенд
       setName(client.client_name);
       setDate(client.client_date);
@@ -157,6 +223,12 @@ export function DealCard({
       setPaid(deal.paid);
       setPaidDate(deal.paid_date);
       setPlatformStatus(deal.platform_status ?? "not_offered");
+      setPhone(contact.phone);
+      setChannel(contact.channel);
+      setEmail(contact.email);
+      setContactNote(contact.note);
+      setNextDate(contact.next_contact_date);
+      setNextPlan(contact.next_contact_plan);
       setSavedSnap({
         name: client.client_name.trim(),
         date: client.client_date,
@@ -168,6 +240,12 @@ export function DealCard({
         paid: deal.paid,
         paidDate: deal.paid_date,
         platformStatus: deal.platform_status ?? "not_offered",
+        phone: contact.phone,
+        channel: contact.channel,
+        email: contact.email,
+        contactNote: contact.note,
+        nextDate: contact.next_contact_date,
+        nextPlan: contact.next_contact_plan,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -179,6 +257,8 @@ export function DealCard({
   }
 
   const closed = paid;
+  const inputCls =
+    "w-full h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/40";
 
   return (
     <section
@@ -207,7 +287,7 @@ export function DealCard({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="напр. Анна"
-            className="w-full h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className={inputCls}
           />
         </Field>
         <Field label="Дата контакта">
@@ -215,9 +295,71 @@ export function DealCard({
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="h-10 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className={inputCls}
           />
         </Field>
+      </div>
+
+      {/* --- Контакты --- */}
+      <div className="mt-6 border-t border-line pt-6">
+        <h3 className="mb-4 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+          <Phone size={14} />
+          Контакты
+        </h3>
+        <div className="space-y-5">
+          <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+            <Field label="Телефон">
+              <input
+                value={phone}
+                inputMode="tel"
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+7 900 000-00-00"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Email">
+              <input
+                value={email}
+                type="email"
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="client@example.com"
+                className={inputCls}
+              />
+            </Field>
+          </div>
+
+          <Field label="Как связываемся">
+            <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-line-strong bg-bg p-0.5">
+              {CHANNEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() =>
+                    setChannel(channel === opt.key ? null : opt.key)
+                  }
+                  className={cn(
+                    "h-9 rounded-md px-3 text-sm transition-colors",
+                    channel === opt.key
+                      ? "bg-primary-strong font-semibold text-white shadow-sm"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Заметка о клиенте">
+            <textarea
+              value={contactNote}
+              onChange={(e) => setContactNote(e.target.value)}
+              rows={2}
+              placeholder="напр. отвечает вечером, интересует египетский диалект"
+              className="w-full rounded-lg border border-line-strong bg-bg px-3 py-2 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+          </Field>
+        </div>
       </div>
 
       {/* --- Сделка --- */}
@@ -253,7 +395,7 @@ export function DealCard({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="напр. хочет в следующий поток / только индивидуально"
-              className="w-full h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className={inputCls}
             />
           </Field>
 
@@ -338,6 +480,37 @@ export function DealCard({
             ))}
           </div>
         </Field>
+      </div>
+
+      {/* --- Следующий контакт (отдельное окошко) --- */}
+      <div className="mt-6 rounded-lg border border-line-strong bg-bg/60 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted">
+            <CalendarClock size={14} />
+            Следующий контакт
+          </span>
+          <span className="text-xs text-subtle">
+            когда и с чем написать в следующий раз
+          </span>
+        </div>
+        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-[auto_1fr]">
+          <Field label="Дата">
+            <input
+              type="date"
+              value={nextDate ?? ""}
+              onChange={(e) => setNextDate(e.target.value || null)}
+              className="h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+          </Field>
+          <Field label="Что предложить">
+            <input
+              value={nextPlan}
+              onChange={(e) => setNextPlan(e.target.value)}
+              placeholder="напр. напомнить про пробный урок, предложить рассрочку"
+              className={inputCls}
+            />
+          </Field>
+        </div>
       </div>
 
       {/* --- Сохранение --- */}

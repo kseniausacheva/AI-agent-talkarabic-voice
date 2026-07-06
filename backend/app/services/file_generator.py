@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import List, Optional
 
-from app.models.checklist import ChecklistItem, DealInfo
+from app.models.checklist import ChecklistItem, ContactInfo, DealInfo
 
 _STATUS_BOX = {
     "confirmed": "[x]",
@@ -29,6 +29,47 @@ _PLATFORM_STATUS_LABEL = {
     "offered": "предложили",
     "taken": "оформил",
 }
+
+_CONTACT_CHANNEL_LABEL = {
+    "whatsapp": "WhatsApp",
+    "telegram": "Telegram",
+    "instagram": "Instagram",
+    "phone": "телефон",
+    "email": "email",
+    "other": "другое",
+}
+
+
+def _contact_section(contact: Optional[ContactInfo]) -> List[str]:
+    """Секция «Контакты» + план следующего касания — только при наличии данных."""
+    if contact is None:
+        return []
+    has_data = bool(
+        contact.phone
+        or contact.email
+        or contact.note
+        or contact.channel
+        or contact.next_contact_date
+        or contact.next_contact_plan
+    )
+    if not has_data:
+        return []
+    lines = ["## Контакты", ""]
+    if contact.phone:
+        lines.append(f"- **Телефон:** {contact.phone}")
+    if contact.channel:
+        channel = _CONTACT_CHANNEL_LABEL.get(contact.channel, contact.channel)
+        lines.append(f"- **Связь:** {channel}")
+    if contact.email:
+        lines.append(f"- **Email:** {contact.email}")
+    if contact.note:
+        lines.append(f"- **Заметка:** {contact.note}")
+    if contact.next_contact_date or contact.next_contact_plan:
+        when = contact.next_contact_date or "—"
+        plan = f" — {contact.next_contact_plan}" if contact.next_contact_plan else ""
+        lines.append(f"- **Следующий контакт:** {when}{plan}")
+    lines.append("")
+    return lines
 
 
 def _format_price(deal: DealInfo) -> str:
@@ -89,6 +130,7 @@ def generate_markdown(
     session_id: str,
     items: List[ChecklistItem],
     deal: Optional[DealInfo] = None,
+    contact: Optional[ContactInfo] = None,
 ) -> str:
     grouped: dict[str, list[ChecklistItem]] = defaultdict(list)
     for item in items:
@@ -104,6 +146,7 @@ def generate_markdown(
     lines.append("")
 
     lines.extend(_deal_section(deal))
+    lines.extend(_contact_section(contact))
 
     for category, group_items in grouped.items():
         lines.append(f"## {category}")

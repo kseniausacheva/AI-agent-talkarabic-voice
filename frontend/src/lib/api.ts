@@ -13,6 +13,7 @@ import {
   mockStats,
   mockSubmit,
   mockUpdateClient,
+  mockUpdateContact,
   mockUpdateDeal,
 } from "./mock-data";
 import type {
@@ -21,6 +22,8 @@ import type {
   ChecklistsResponse,
   ClientAdvice,
   ClientUpdate,
+  ContactInfo,
+  ContactUpdate,
   DealInfo,
   DealUpdate,
   FunnelColumn,
@@ -330,6 +333,26 @@ export async function apiUpdateClient(
     return mockUpdateClient(changes);
   }
   const res = await request(`/api/session/${sessionId}/client`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+  return res.json();
+}
+
+/**
+ * Обновление контактов клиента (телефон, канал, email, заметка) и плана
+ * следующего касания (дата + что предложить). Возвращает актуальный ContactInfo.
+ */
+export async function apiUpdateContact(
+  sessionId: string,
+  changes: ContactUpdate,
+): Promise<ContactInfo> {
+  if (USE_MOCK) {
+    await wait(250);
+    return mockUpdateContact(changes);
+  }
+  const res = await request(`/api/session/${sessionId}/contact`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),

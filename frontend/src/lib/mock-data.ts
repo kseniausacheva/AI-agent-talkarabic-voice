@@ -3,6 +3,7 @@ import type {
   ChecklistListItem,
   ChecklistsResponse,
   ClientAdvice,
+  ContactInfo,
   DealInfo,
   DealUpdate,
   LeadInsights,
@@ -200,6 +201,28 @@ export function mockUpdateDeal(changes: DealUpdate): DealInfo {
     mockDealState.paid_date = null;
   }
   return { ...mockDealState };
+}
+
+/** Контакты клиента для demo-abc123 (mock). Мутируются mockUpdateContact. */
+let mockContactState: ContactInfo = {
+  phone: "+7 900 123-45-67",
+  channel: "whatsapp",
+  email: "anna@example.com",
+  note: "Списывались в WhatsApp, отвечает вечером",
+  next_contact_date: daysAgoISO(-2),
+  next_contact_plan: "Прислать программу и предложить пробный урок",
+};
+
+export function mockUpdateContact(changes: {
+  phone?: string;
+  channel?: ContactInfo["channel"];
+  email?: string;
+  note?: string;
+  next_contact_date?: string | null;
+  next_contact_plan?: string;
+}): ContactInfo {
+  mockContactState = { ...mockContactState, ...changes };
+  return { ...mockContactState };
 }
 
 /** Данные клиента для demo-abc123 (mock). Мутируются mockUpdateClient. */
@@ -449,5 +472,6 @@ export function mockResults(): ResultsResponse {
     client_date: mockClientState.client_date,
     insights: MOCK_INSIGHTS,
     deal: { ...mockDealState },
+    contact: { ...mockContactState },
   };
 }

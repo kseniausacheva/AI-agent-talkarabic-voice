@@ -14,6 +14,7 @@ import { AdviceCard } from "@/components/AdviceCard";
 import { apiDeleteSession, apiDownloadChecklist, apiGetResults } from "@/lib/api";
 import type {
   ChecklistItem,
+  ContactInfo,
   DealInfo,
   LeadInsights,
   LeadStage,
@@ -31,6 +32,7 @@ export default function ResultsPage({
   const [markdown, setMarkdown] = useState<string>("");
   const [insights, setInsights] = useState<LeadInsights | null>(null);
   const [deal, setDeal] = useState<DealInfo | null>(null);
+  const [contact, setContact] = useState<ContactInfo | null>(null);
   const [clientName, setClientName] = useState("");
   const [clientDate, setClientDate] = useState("");
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,7 @@ export default function ResultsPage({
         setMarkdown(data.markdown);
         setInsights(data.insights ?? null);
         setDeal(data.deal ?? null);
+        setContact(data.contact ?? null);
         setClientName(data.client_name ?? "");
         setClientDate(data.client_date ?? "");
       } catch (e) {
@@ -168,6 +171,7 @@ export default function ResultsPage({
                 initialDeal={deal}
                 initialName={clientName}
                 initialDate={clientDate}
+                initialContact={contact}
               />
 
               {insights && <LeadInsightsCard insights={insights} />}

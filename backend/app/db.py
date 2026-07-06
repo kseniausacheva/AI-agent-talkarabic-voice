@@ -78,6 +78,8 @@ class Checklist(Base):
     completeness: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Учёт продаж: продукт, стоимость, статус оплаты (DealInfo)
     deal_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Контакты клиента + план следующего касания (ContactInfo)
+    contact_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class AppSetting(Base):
@@ -95,6 +97,7 @@ _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",
     "completeness": "ALTER TABLE checklists ADD COLUMN completeness INTEGER",
     "deal_json": "ALTER TABLE checklists ADD COLUMN deal_json TEXT",
+    "contact_json": "ALTER TABLE checklists ADD COLUMN contact_json TEXT",
 }
 _MANAGER_MIGRATIONS = {
     "telegram_chat_id": "ALTER TABLE managers ADD COLUMN telegram_chat_id TEXT",

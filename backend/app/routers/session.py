@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import Manager, get_session as get_db_session
-from app.models.checklist import ClientAdvice, DealInfo
+from app.models.checklist import ClientAdvice, ContactInfo, DealInfo
 from app.models.session import (
+    ContactUpdate,
     DealUpdate,
     ResultsResponse,
     StartSessionResponse,
@@ -294,6 +295,7 @@ async def get_results(
         client_date=state.client_date,
         insights=state.insights,
         deal=state.deal,
+        contact=state.contact,
     )
 
 
@@ -406,6 +408,31 @@ async def update_client(
         logger.exception("update_client failed")
         raise HTTPException(status_code=500, detail=f"Client update failed: {exc}")
     return result
+
+
+@router.patch("/{session_id}/contact", response_model=ContactInfo)
+async def update_contact(
+    session_id: Annotated[str, Path()],
+    payload: ContactUpdate,
+    manager: Manager = Depends(get_current_manager),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Ручное обновление контактов клиента (телефон, канал, email, заметка)
+    и плана следующего касания (дата + что предложить). Приходят только
+    изменённые поля."""
+    session_manager = get_session_manager()
+    try:
+        contact = await session_manager.update_contact(
+            db, session_id, manager, payload.model_dump(exclude_unset=True)
+        )
+    except SessionNotFoundError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except SessionAccessError:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    except Exception as exc:
+        logger.exception("update_contact failed")
+        raise HTTPException(status_code=500, detail=f"Contact update failed: {exc}")
+    return contact
 
 
 @router.delete("/{session_id}")

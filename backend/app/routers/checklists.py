@@ -69,6 +69,22 @@ def _insights_fields(row: Checklist) -> dict:
     return fields
 
 
+def _contact_next_date(row: Checklist) -> Optional[str]:
+    """next_contact_date из contact_json (ручной ввод менеджера имеет приоритет
+    над AI-датой из insights); None если не задано."""
+    raw = getattr(row, "contact_json", None)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    ncd = data.get("next_contact_date")
+    return ncd if isinstance(ncd, str) and ncd else None
+
+
 def _checklist_item(checklist: Checklist, display_name: str, fields: dict) -> dict:
     deal = _deal_fields(checklist)
     return {
@@ -81,7 +97,7 @@ def _checklist_item(checklist: Checklist, display_name: str, fields: dict) -> di
         "manager_name": display_name,
         "lead_score": fields["lead_score"],
         "stage": fields["stage"],
-        "next_contact_date": fields["next_contact_date"],
+        "next_contact_date": _contact_next_date(checklist) or fields["next_contact_date"],
         "completeness": checklist.completeness,
         "paid": deal["paid"],
         "price": deal["price"],
@@ -118,7 +134,9 @@ async def list_checklists(
         due_rows = []
         for checklist, display_name in (await db.execute(stmt)).all():
             fields = _insights_fields(checklist)
-            ncd = fields["next_contact_date"]
+            # ручная дата из contact_json приоритетнее AI-даты из insights
+            ncd = _contact_next_date(checklist) or fields["next_contact_date"]
+            fields["next_contact_date"] = ncd
             if not ncd or ncd > today or fields["stage"] == "rejected":
                 continue
             due_rows.append((checklist, display_name, fields))

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.questions_template import questions_for_round
 from app.agent.state import AgentState
 from app.db import Checklist, Manager
-from app.models.checklist import ChecklistItem, DealInfo, LeadInsights
+from app.models.checklist import ChecklistItem, ContactInfo, DealInfo, LeadInsights
 from app.models.question import Answer
 from app.models.session import SessionState
 
@@ -68,6 +68,20 @@ def _parse_deal_json(raw: Optional[str]) -> Optional[DealInfo]:
         return None
 
 
+def _parse_contact_json(raw: Optional[str]) -> Optional[ContactInfo]:
+    """contact_json из БД → ContactInfo; None/битый JSON → None (старые записи)."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
+        return ContactInfo.model_validate(data)
+    except Exception:
+        logger.warning("Broken contact_json in DB, ignoring")
+        return None
+
+
 def _completeness(items: List[ChecklistItem]) -> Optional[int]:
     """0–100: % пунктов чеклиста со статусом != not_discussed."""
     if not items:
@@ -100,6 +114,7 @@ def _row_to_state(row: Checklist) -> SessionState:
         checklist_items=checklist_items,
         insights=_parse_insights_json(row.insights_json),
         deal=_parse_deal_json(row.deal_json),
+        contact=_parse_contact_json(row.contact_json),
         markdown_content=row.markdown,
         is_complete=is_complete,
     )
@@ -306,10 +321,54 @@ class SessionManager:
                 from app.services.file_generator import generate_markdown
 
                 items = [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
-                row.markdown = generate_markdown(row.id, items, deal=deal)
+                row.markdown = generate_markdown(
+                    row.id,
+                    items,
+                    deal=deal,
+                    contact=_parse_contact_json(row.contact_json),
+                )
 
             await db.commit()
             return deal
+
+    async def update_contact(
+        self,
+        db: AsyncSession,
+        session_id: str,
+        manager: Manager,
+        changes: Dict,
+    ) -> ContactInfo:
+        """Частичное обновление контактов клиента + плана касания (PATCH).
+        Только переданные (не None) поля перезаписываются. Пересобирает markdown.
+
+        Доступ — общий пул (любой аутентифицированный менеджер)."""
+        async with self._lock_for(session_id):
+            row = await self._load_row(db, session_id)
+            self._check_access(row, manager)
+
+            current = _parse_contact_json(row.contact_json) or ContactInfo()
+            data = current.model_dump()
+            for key, value in changes.items():
+                if value is not None and key in data:
+                    data[key] = value
+
+            contact = ContactInfo.model_validate(data)
+            row.contact_json = json.dumps(contact.model_dump(), ensure_ascii=False)
+
+            # Пересобираем markdown с актуальными контактами (и текущей сделкой).
+            if row.checklist_json:
+                from app.services.file_generator import generate_markdown
+
+                items = [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
+                row.markdown = generate_markdown(
+                    row.id,
+                    items,
+                    deal=_parse_deal_json(row.deal_json),
+                    contact=contact,
+                )
+
+            await db.commit()
+            return contact
 
     async def update_client(
         self,
@@ -437,7 +496,12 @@ class SessionManager:
                 from app.services.file_generator import generate_markdown
 
                 items = [ChecklistItem(**i) for i in json.loads(row.checklist_json)]
-                row.markdown = generate_markdown(row.id, items, deal=deal)
+                row.markdown = generate_markdown(
+                    row.id,
+                    items,
+                    deal=deal,
+                    contact=_parse_contact_json(row.contact_json),
+                )
 
             await db.commit()
             return {"stage": insights.stage, "paid": deal.paid}

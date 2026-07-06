@@ -200,6 +200,35 @@ export type DealUpdate = Partial<{
   platform_status: PlatformStatus;
 }>;
 
+/* ------------------------- Контакты клиента ------------------------- */
+
+export type ContactChannel =
+  | "whatsapp"
+  | "telegram"
+  | "instagram"
+  | "phone"
+  | "email"
+  | "other";
+
+export type ContactInfo = {
+  phone: string;
+  channel: ContactChannel | null;
+  email: string;
+  note: string;
+  next_contact_date: string | null;
+  next_contact_plan: string;
+};
+
+/** Частичное обновление контактов (PATCH) — только изменённые поля. */
+export type ContactUpdate = Partial<{
+  phone: string;
+  channel: ContactChannel | null;
+  email: string;
+  note: string;
+  next_contact_date: string | null;
+  next_contact_plan: string;
+}>;
+
 export type ResultsResponse = {
   session_id: string;
   checklist: ChecklistItem[];
@@ -208,6 +237,7 @@ export type ResultsResponse = {
   client_date: string;
   insights: LeadInsights | null;
   deal: DealInfo | null;
+  contact: ContactInfo | null;
 };
 
 /** Обновление данных клиента (PATCH) — имя и/или дата контакта. */

@@ -17,10 +17,16 @@ ProductType = Literal["individual", "course", "platform", "undecided"]
 # не предлагали / предложили / оформил.
 PlatformStatus = Literal["not_offered", "offered", "taken"]
 
+# Предпочтительный канал связи с клиентом.
+ContactChannel = Literal[
+    "whatsapp", "telegram", "instagram", "phone", "email", "other"
+]
+
 _STAGES = ("new", "warm", "hot", "rejected")
 _OBJECTION_TYPES = ("price", "time", "tech", "trust", "other")
 _PRODUCT_TYPES = ("individual", "course", "platform", "undecided")
 _PLATFORM_STATUSES = ("not_offered", "offered", "taken")
+_CONTACT_CHANNELS = ("whatsapp", "telegram", "instagram", "phone", "email", "other")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -245,6 +251,39 @@ class DealInfo(BaseModel):
 
     def is_closed(self) -> bool:
         return self.paid
+
+
+class ContactInfo(BaseModel):
+    """Контактные данные клиента и план следующего касания.
+
+    Заполняется менеджером вручную на странице результата. Все поля
+    опциональны; валидация толерантная (битые значения → дефолты).
+    next_contact_date/next_contact_plan — когда и с чем написать в следующий раз.
+    """
+
+    phone: str = ""
+    channel: Optional[ContactChannel] = None  # предпочтительный канал связи
+    email: str = ""
+    note: str = ""  # свободная заметка о клиенте
+    next_contact_date: Optional[str] = None  # когда написать в следующий раз
+    next_contact_plan: str = ""  # что предложить в следующий раз
+
+    @field_validator("phone", "email", "note", "next_contact_plan", mode="before")
+    @classmethod
+    def _tolerant_text(cls, value: Any) -> str:
+        return _str_or_empty(value)
+
+    @field_validator("channel", mode="before")
+    @classmethod
+    def _tolerant_channel(cls, value: Any) -> Optional[str]:
+        if isinstance(value, str) and value.strip().lower() in _CONTACT_CHANNELS:
+            return value.strip().lower()
+        return None
+
+    @field_validator("next_contact_date", mode="before")
+    @classmethod
+    def _tolerant_date(cls, value: Any) -> Optional[str]:
+        return _valid_date_or_none(value)
 
 
 class AdviceObjection(BaseModel):

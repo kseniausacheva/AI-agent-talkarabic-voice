@@ -6,13 +6,14 @@
 """
 import asyncio
 import logging
+import pathlib
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -34,7 +35,10 @@ def _now() -> str:
 
 
 def _build_html(text: str, unsub_url: str) -> str:
-    body = (text or "").strip().replace("\n", "<br>")
+    body = (text or "").strip()
+    # если это уже HTML (из редактора) — не трогаем; иначе переносы строк → <br>
+    if not ("<" in body and ">" in body):
+        body = body.replace("\n", "<br>")
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
         'color:#092127;line-height:1.6;max-width:560px;margin:0 auto">'
@@ -85,6 +89,39 @@ async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
                 logger.warning("Ошибка отправки %s: %s", email, exc)
             await asyncio.sleep(0.2)  # мягкий rate-limit
     logger.info("Выпуск разослан: отправлено=%d, ошибок=%d", sent, failed)
+
+
+# ------------------------------ Картинки ------------------------------
+
+_ALLOWED_IMG = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+}
+
+
+@router.post("/upload/image")
+async def upload_image(
+    file: UploadFile = File(...),
+    manager: Manager = Depends(require_admin),
+):
+    """Загрузка картинки для письма (admin) → публичный URL /uploads/…."""
+    ct = (file.content_type or "").lower()
+    if ct not in _ALLOWED_IMG:
+        raise HTTPException(status_code=400, detail="Только картинки: PNG, JPG, GIF, WEBP.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустой файл.")
+    if len(data) > 5_000_000:
+        raise HTTPException(status_code=400, detail="Картинка больше 5 МБ.")
+    s = get_settings()
+    updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    name = uuid.uuid4().hex + _ALLOWED_IMG[ct]
+    (updir / name).write_bytes(data)
+    return {"url": f"{s.public_api_url.rstrip('/')}/uploads/{name}"}
 
 
 # ------------------------------ Подписчики ------------------------------

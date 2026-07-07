@@ -500,6 +500,18 @@ export async function apiSubscribersList(opts: {
   return res.json();
 }
 
+/** Загрузить картинку для письма (admin) → публичный URL. */
+export async function apiUploadImage(file: File): Promise<{ url: string }> {
+  if (USE_MOCK) {
+    await wait(400);
+    return { url: URL.createObjectURL(file) };
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const res = await request("/api/upload/image", { method: "POST", body: form });
+  return res.json();
+}
+
 /** Удалить подписчика из базы рассылки (admin). */
 export async function apiDeleteSubscriber(id: number): Promise<void> {
   if (USE_MOCK) {

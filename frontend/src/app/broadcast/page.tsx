@@ -14,6 +14,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
+import { RichEditor } from "@/components/RichEditor";
 import {
   apiBroadcast,
   apiDeleteSubscriber,
@@ -110,7 +111,13 @@ export default function BroadcastPage() {
     return info.groups.find((g) => g.group === group)?.count ?? 0;
   }, [info, group, activeTotal]);
 
-  const canSend = subject.trim() && text.trim() && !busy;
+  const hasBody =
+    /<img/i.test(text) ||
+    text
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length > 0;
+  const canSend = subject.trim() && hasBody && !busy;
 
   async function sendTest() {
     if (!testEmail.trim()) {
@@ -212,20 +219,14 @@ export default function BroadcastPage() {
                 />
               </label>
 
-              <label className="mb-5 block">
+              <div className="mb-5">
                 <span className="mb-1.5 block text-xs text-muted">Текст письма</span>
-                <textarea
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  rows={9}
-                  placeholder={"Здравствуйте!\n\nРады сообщить, что открыт набор на новый поток…"}
-                  className="w-full rounded-lg border border-line-strong bg-bg p-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                <span className="mt-1 block text-xs text-subtle">
-                  Переносы строк сохранятся. Ссылка отписки добавится
-                  автоматически.
+                <RichEditor onChange={setText} disabled={busy !== null} />
+                <span className="mt-1.5 block text-xs text-subtle">
+                  Выделяй жирным/курсивом, добавляй заголовки, списки, ссылки и
+                  картинки. Ссылка «Отписаться» добавится автоматически.
                 </span>
-              </label>
+              </div>
 
               <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface/50 p-4">
                 <label className="flex-1 min-w-[12rem]">

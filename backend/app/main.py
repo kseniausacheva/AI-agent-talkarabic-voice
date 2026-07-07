@@ -1,12 +1,19 @@
 """FastAPI entry point. Preload Whisper при старте, регистрация роутеров, CORS."""
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.db import init_db
+
+
+def uploads_dir() -> Path:
+    """Каталог загруженных картинок (рядом с БД, на постоянном volume)."""
+    return Path(get_settings().database_path).resolve().parent / "uploads"
 from app.routers import (
     auth,
     checklists,
@@ -67,6 +74,11 @@ def create_app() -> FastAPI:
     app.include_router(cron.router)
     app.include_router(knowledge.router)
     app.include_router(mailing.router)
+
+    # Статика: загруженные картинки для писем (публично, для email-клиентов)
+    updir = uploads_dir()
+    updir.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(updir)), name="uploads")
     return app
 
 

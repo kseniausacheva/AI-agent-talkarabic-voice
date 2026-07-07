@@ -101,7 +101,7 @@ export default function PipelinePage() {
       <MockBanner />
       <AppHeader />
       <main className="flex-1">
-        <div className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
+        <div className="mx-auto max-w-7xl px-6 py-10 sm:py-14">
           <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-2">
             Воронка
           </h1>
@@ -141,7 +141,7 @@ export default function PipelinePage() {
                       if (id) void move(id, col.key);
                     }}
                     className={cn(
-                      "flex w-72 shrink-0 flex-col rounded-xl border bg-surface/60 transition-colors",
+                      "flex min-w-[13rem] flex-1 flex-col rounded-xl border bg-surface/60 transition-colors",
                       overCol === col.key
                         ? "border-primary bg-tint"
                         : "border-line",

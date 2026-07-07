@@ -206,7 +206,7 @@ export default function DashboardPage() {
       <MockBanner />
       <AppHeader />
       <main className="flex-1">
-        <div className="mx-auto max-w-4xl px-6 py-10 sm:py-14">
+        <div className="mx-auto max-w-6xl px-6 py-10 sm:py-14">
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
               <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-2">
@@ -419,7 +419,7 @@ export default function DashboardPage() {
                         <td className="px-4 py-3.5 whitespace-nowrap">
                           <DealCell item={item} />
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-3.5 whitespace-nowrap">
                           {completed ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-success/12 text-success px-2.5 py-0.5 text-xs font-medium">
                               <span className="h-1.5 w-1.5 rounded-full bg-success" />

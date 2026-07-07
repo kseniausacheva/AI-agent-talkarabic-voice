@@ -320,6 +320,23 @@ export type SubscribersInfo = {
   sender: string | null;
 };
 
+/** Один подписчик базы рассылки. */
+export type SubscriberRow = {
+  id: number;
+  email: string;
+  name: string;
+  group: string;
+  unsubscribed: boolean;
+};
+
+/** Постраничный список подписчиков (GET /api/subscribers/list). */
+export type SubscribersListResponse = {
+  items: SubscriberRow[];
+  total: number;
+  page: number;
+  per_page: number;
+};
+
 /** Результат отправки выпуска (POST /api/broadcast). */
 export type BroadcastResult = {
   ok: boolean;

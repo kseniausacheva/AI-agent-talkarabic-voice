@@ -38,6 +38,8 @@ import type {
   SessionStartResponse,
   StatsResponse,
   SubmitRoundResponse,
+  SubscriberRow,
+  SubscribersListResponse,
 } from "./types";
 
 /**
@@ -459,6 +461,52 @@ export async function apiBroadcast(payload: {
     body: JSON.stringify(payload),
   });
   return res.json();
+}
+
+/** Постраничный список подписчиков (admin). */
+export async function apiSubscribersList(opts: {
+  q?: string;
+  group?: string;
+  page?: number;
+}): Promise<SubscribersListResponse> {
+  const { q = "", group = "", page = 1 } = opts;
+  if (USE_MOCK) {
+    await wait(300);
+    const groups = ["Египетский диалект", "Халиджи", "Курс 2 (Египетский)"];
+    const all: SubscriberRow[] = Array.from({ length: 128 }, (_, i) => ({
+      id: i + 1,
+      email: `client${i + 1}@example.com`,
+      name: "",
+      group: groups[i % 3],
+      unsubscribed: i % 40 === 0,
+    }));
+    const filtered = all.filter(
+      (s) =>
+        (!group || s.group === group) &&
+        (!q.trim() || s.email.includes(q.trim().toLowerCase())),
+    );
+    const per = 30;
+    return {
+      items: filtered.slice((page - 1) * per, (page - 1) * per + per),
+      total: filtered.length,
+      page,
+      per_page: per,
+    };
+  }
+  const params = new URLSearchParams({ page: String(page), per_page: "30" });
+  if (q.trim()) params.set("q", q.trim());
+  if (group) params.set("group", group);
+  const res = await request(`/api/subscribers/list?${params.toString()}`);
+  return res.json();
+}
+
+/** Удалить подписчика из базы рассылки (admin). */
+export async function apiDeleteSubscriber(id: number): Promise<void> {
+  if (USE_MOCK) {
+    await wait(200);
+    return;
+  }
+  await request(`/api/subscribers/${id}`, { method: "DELETE" });
 }
 
 /* ----------------- База знаний и AI-советник ----------------- */

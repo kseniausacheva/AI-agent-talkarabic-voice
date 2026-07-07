@@ -1,12 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Send, TriangleAlert } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Search,
+  Send,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
 import { MockBanner } from "@/components/MockBanner";
-import { apiBroadcast, apiSubscribers } from "@/lib/api";
-import type { SubscribersInfo } from "@/lib/types";
+import {
+  apiBroadcast,
+  apiDeleteSubscriber,
+  apiSubscribers,
+  apiSubscribersList,
+} from "@/lib/api";
+import type { SubscribersInfo, SubscribersListResponse } from "@/lib/types";
 
 export default function BroadcastPage() {
   const [info, setInfo] = useState<SubscribersInfo | null>(null);
@@ -18,6 +32,13 @@ export default function BroadcastPage() {
   const [busy, setBusy] = useState<"test" | "send" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // База подписчиков (список)
+  const [subs, setSubs] = useState<SubscribersListResponse | null>(null);
+  const [subsQ, setSubsQ] = useState("");
+  const [subsPage, setSubsPage] = useState(1);
+  const [subsLoading, setSubsLoading] = useState(true);
+  const [subDeleting, setSubDeleting] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +56,49 @@ export default function BroadcastPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSubsLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const list = await apiSubscribersList({ q: subsQ, page: subsPage });
+        if (!cancelled) setSubs(list);
+      } catch {
+        // список необязателен — не ломаем страницу
+      } finally {
+        if (!cancelled) setSubsLoading(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [subsQ, subsPage]);
+
+  async function removeSub(id: number) {
+    setSubDeleting(id);
+    try {
+      await apiDeleteSubscriber(id);
+      setSubs((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.filter((s) => s.id !== id),
+              total: Math.max(0, prev.total - 1),
+            }
+          : prev,
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSubDeleting(null);
+    }
+  }
+
+  const subsPages = subs
+    ? Math.max(1, Math.ceil(subs.total / subs.per_page))
+    : 1;
 
   const activeTotal = useMemo(
     () => (info ? info.groups.reduce((s, g) => s + g.count, 0) : 0),
@@ -218,6 +282,136 @@ export default function BroadcastPage() {
               )}
             </>
           )}
+
+          {/* --- База подписчиков (список) --- */}
+          <section className="mt-12 border-t border-line pt-8">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-ink">
+                База подписчиков{subs ? ` · ${subs.total}` : ""}
+              </h2>
+              <label className="relative block w-full sm:w-64">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle"
+                />
+                <input
+                  type="search"
+                  value={subsQ}
+                  onChange={(e) => {
+                    setSubsQ(e.target.value);
+                    setSubsPage(1);
+                  }}
+                  placeholder="Поиск по email…"
+                  className="h-10 w-full rounded-lg border border-line-strong bg-bg pl-10 pr-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </label>
+            </div>
+
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line bg-surface text-left text-xs font-medium text-muted">
+                    <th className="px-4 py-2.5 font-medium">Email</th>
+                    <th className="px-4 py-2.5 font-medium">Группа</th>
+                    <th className="px-4 py-2.5 font-medium">Статус</th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <span className="sr-only">Действия</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subsLoading && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                        <Loader2
+                          size={15}
+                          className="mr-2 inline animate-spin text-primary"
+                        />
+                        Загружаем…
+                      </td>
+                    </tr>
+                  )}
+                  {!subsLoading && subs && subs.items.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                        Ничего не найдено.
+                      </td>
+                    </tr>
+                  )}
+                  {!subsLoading &&
+                    subs?.items.map((s) => (
+                      <tr
+                        key={s.id}
+                        className="border-b border-line last:border-b-0"
+                      >
+                        <td className="px-4 py-2.5 text-ink">{s.email}</td>
+                        <td className="px-4 py-2.5 text-muted">
+                          {s.group || "—"}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {s.unsubscribed ? (
+                            <span className="text-xs text-danger">отписался</span>
+                          ) : (
+                            <span className="text-xs text-success">активен</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {subDeleting === s.id ? (
+                            <Loader2
+                              size={14}
+                              className="inline animate-spin text-danger"
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => removeSub(s.id)}
+                              className="text-subtle transition-colors hover:text-danger"
+                              title="Удалить из базы"
+                              aria-label="Удалить подписчика"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+
+            {subs && subsPages > 1 && (
+              <div className="mt-4 flex items-center justify-between">
+                <span className="text-xs text-muted tabular-nums">
+                  Всего: {subs.total}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSubsPage((p) => Math.max(1, p - 1))}
+                    disabled={subsPage <= 1}
+                    className="btn btn-secondary btn-sm disabled:opacity-40"
+                  >
+                    <ChevronLeft size={14} />
+                    Назад
+                  </button>
+                  <span className="px-1 text-xs text-muted tabular-nums">
+                    Стр. {subsPage} из {subsPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSubsPage((p) => Math.min(subsPages, p + 1))
+                    }
+                    disabled={subsPage >= subsPages}
+                    className="btn btn-secondary btn-sm disabled:opacity-40"
+                  >
+                    Вперёд
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
       </main>
     </AuthGuard>

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -160,6 +160,58 @@ async def list_subscribers(
         "configured": bool(settings.brevo_api_key and settings.brevo_sender_email),
         "sender": settings.brevo_sender_email or None,
     }
+
+
+@router.get("/subscribers/list")
+async def subscribers_list(
+    q: str = Query(default=""),
+    group: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=30, ge=1, le=200),
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Постраничный список подписчиков (admin): email, имя, группа, статус."""
+    stmt = select(Subscriber)
+    if group:
+        stmt = stmt.where(Subscriber.group_tag == group)
+    rows = (
+        await db.execute(stmt.order_by(Subscriber.group_tag, Subscriber.email))
+    ).scalars().all()
+    qn = q.strip().lower()
+    if qn:
+        rows = [
+            r for r in rows
+            if qn in r.email.lower() or qn in (r.name or "").lower()
+        ]
+    total = len(rows)
+    start = (page - 1) * per_page
+    page_rows = rows[start : start + per_page]
+    items = [
+        {
+            "id": r.id,
+            "email": r.email,
+            "name": r.name,
+            "group": r.group_tag or "",
+            "unsubscribed": bool(r.unsubscribed),
+        }
+        for r in page_rows
+    ]
+    return {"items": items, "total": total, "page": page, "per_page": per_page}
+
+
+@router.delete("/subscribers/{sub_id}")
+async def delete_subscriber(
+    sub_id: int = Path(...),
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Удалить подписчика из базы рассылки (admin)."""
+    row = await db.get(Subscriber, sub_id)
+    if row:
+        await db.delete(row)
+        await db.commit()
+    return {"ok": True}
 
 
 # ------------------------------ Выпуск ------------------------------

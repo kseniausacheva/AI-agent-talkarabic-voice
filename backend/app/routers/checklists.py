@@ -139,6 +139,9 @@ async def list_checklists(
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         due_rows = []
         for checklist, display_name in (await db.execute(stmt)).all():
+            # оплаченные (закрытые) сделки — не напоминаем, продажа состоялась
+            if _deal_fields(checklist)["paid"]:
+                continue
             fields = _insights_fields(checklist)
             # ручная дата из contact_json приоритетнее AI-даты из insights
             ncd = _contact_next_date(checklist) or fields["next_contact_date"]

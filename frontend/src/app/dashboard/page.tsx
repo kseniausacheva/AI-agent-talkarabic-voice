@@ -345,7 +345,7 @@ export default function DashboardPage() {
                   <th className="px-4 py-3 font-medium">Связаться</th>
                   <th className="px-4 py-3 font-medium">Сделка</th>
                   <th className="px-4 py-3 font-medium">Статус</th>
-                  <th className="px-4 py-3 font-medium">
+                  <th className="px-4 py-3 font-medium sticky right-0 z-10 bg-surface">
                     <span className="sr-only">Действия</span>
                   </th>
                 </tr>
@@ -399,7 +399,7 @@ export default function DashboardPage() {
                           {item.lead_score ?? "—"}
                         </td>
                         <td className="px-4 py-3.5 whitespace-nowrap">
-                          {item.next_contact_date ? (
+                          {item.next_contact_date && !item.paid ? (
                             <span
                               title={`Связаться ${item.next_contact_date}`}
                               className={cn(
@@ -433,7 +433,7 @@ export default function DashboardPage() {
                           )}
                         </td>
                         <td
-                          className="px-4 py-3.5 text-right whitespace-nowrap"
+                          className="px-4 py-3.5 text-right whitespace-nowrap sticky right-0 z-10 bg-bg border-l border-line"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {deletingId === item.id ? (
@@ -462,11 +462,11 @@ export default function DashboardPage() {
                             <button
                               type="button"
                               onClick={() => setConfirmId(item.id)}
-                              className="text-subtle transition-colors hover:text-danger"
+                              className="text-muted transition-colors hover:text-danger"
                               title="Удалить клиента"
                               aria-label="Удалить клиента"
                             >
-                              <Trash2 size={15} />
+                              <Trash2 size={16} />
                             </button>
                           )}
                         </td>

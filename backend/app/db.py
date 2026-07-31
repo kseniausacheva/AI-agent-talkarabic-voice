@@ -110,6 +110,10 @@ class Subscriber(Base):
     )
     unsub_token: Mapped[str] = mapped_column(String(40), nullable=False)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    # Какой выпуск этому адресу уже ушёл (ключ = тема письма) и когда.
+    # Нужно, чтобы бить большую базу на дни и не слать одному дважды.
+    last_campaign: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_sent_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
 
 # Миграции: колонка → DDL (добавляется, если PRAGMA её не видит)
@@ -121,6 +125,10 @@ _CHECKLIST_MIGRATIONS = {
 }
 _MANAGER_MIGRATIONS = {
     "telegram_chat_id": "ALTER TABLE managers ADD COLUMN telegram_chat_id TEXT",
+}
+_SUBSCRIBER_MIGRATIONS = {
+    "last_campaign": "ALTER TABLE subscribers ADD COLUMN last_campaign TEXT",
+    "last_sent_at": "ALTER TABLE subscribers ADD COLUMN last_sent_at TEXT",
 }
 
 
@@ -163,6 +171,7 @@ async def init_db() -> None:
         for table, migrations in (
             ("checklists", _CHECKLIST_MIGRATIONS),
             ("managers", _MANAGER_MIGRATIONS),
+            ("subscribers", _SUBSCRIBER_MIGRATIONS),
         ):
             result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
             existing_columns = {row[1] for row in result.fetchall()}

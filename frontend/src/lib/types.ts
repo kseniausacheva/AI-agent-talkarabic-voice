@@ -341,9 +341,20 @@ export type SubscribersListResponse = {
 export type BroadcastResult = {
   ok: boolean;
   queued?: number;
+  remaining?: number;
   sent?: number;
   test?: boolean;
   detail?: string;
+};
+
+/** Ход выпуска и дневной лимит Brevo (GET /api/broadcast/status). */
+export type BroadcastStatus = {
+  group_total: number;
+  pending: number;
+  already_sent: number;
+  sent_today: number | null;
+  daily_limit: number;
+  left_today: number | null;
 };
 
 export type RecorderState =

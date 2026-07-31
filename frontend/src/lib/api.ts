@@ -26,6 +26,7 @@ import type {
   ContactInfo,
   ContactUpdate,
   BroadcastResult,
+  BroadcastStatus,
   DealInfo,
   DealUpdate,
   FunnelColumn,
@@ -443,17 +444,41 @@ export async function apiSubscribers(): Promise<SubscribersInfo> {
   return res.json();
 }
 
-/** Отправить выпуск. test_email → тест-письмо; иначе рассылка по группе. */
+/** Ход выпуска по теме письма + дневной лимит Brevo. */
+export async function apiBroadcastStatus(opts: {
+  subject: string;
+  group?: string | null;
+}): Promise<BroadcastStatus> {
+  if (USE_MOCK) {
+    await wait(200);
+    return {
+      group_total: 126,
+      pending: 126,
+      already_sent: 0,
+      sent_today: 12,
+      daily_limit: 300,
+      left_today: 288,
+    };
+  }
+  const params = new URLSearchParams({ subject: opts.subject });
+  if (opts.group) params.set("group", opts.group);
+  const res = await request(`/api/broadcast/status?${params.toString()}`);
+  return res.json();
+}
+
+/** Отправить выпуск. test_email → тест-письмо; иначе партия по группе. */
 export async function apiBroadcast(payload: {
   subject: string;
   text: string;
   group?: string | null;
   test_email?: string | null;
+  limit?: number | null;
 }): Promise<BroadcastResult> {
   if (USE_MOCK) {
     await wait(700);
     if (payload.test_email) return { ok: true, test: true, sent: 1 };
-    return { ok: true, queued: 106 };
+    const queued = payload.limit ?? 106;
+    return { ok: true, queued, remaining: Math.max(0, 126 - queued) };
   }
   const res = await request("/api/broadcast", {
     method: "POST",

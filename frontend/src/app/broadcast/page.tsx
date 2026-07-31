@@ -17,11 +17,16 @@ import { MockBanner } from "@/components/MockBanner";
 import { RichEditor } from "@/components/RichEditor";
 import {
   apiBroadcast,
+  apiBroadcastStatus,
   apiDeleteSubscriber,
   apiSubscribers,
   apiSubscribersList,
 } from "@/lib/api";
-import type { SubscribersInfo, SubscribersListResponse } from "@/lib/types";
+import type {
+  BroadcastStatus,
+  SubscribersInfo,
+  SubscribersListResponse,
+} from "@/lib/types";
 
 export default function BroadcastPage() {
   const [info, setInfo] = useState<SubscribersInfo | null>(null);
@@ -33,6 +38,11 @@ export default function BroadcastPage() {
   const [busy, setBusy] = useState<"test" | "send" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Партии: сколько писем отправить сейчас (Brevo free = 300/день)
+  const [status, setStatus] = useState<BroadcastStatus | null>(null);
+  const [batch, setBatch] = useState("");
+  const [batchTouched, setBatchTouched] = useState(false);
 
   // База подписчиков (список)
   const [subs, setSubs] = useState<SubscribersListResponse | null>(null);
@@ -76,6 +86,41 @@ export default function BroadcastPage() {
       window.clearTimeout(t);
     };
   }, [subsQ, subsPage]);
+
+  // Ход выпуска (по теме письма) + остаток дневного лимита Brevo
+  const refreshStatus = useMemo(
+    () => async (subj: string, grp: string) => {
+      try {
+        return await apiBroadcastStatus({ subject: subj, group: grp || null });
+      } catch {
+        return null; // статус необязателен — не ломаем отправку
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      const st = await refreshStatus(subject, group);
+      if (!cancelled && st) setStatus(st);
+    }, 500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [subject, group, refreshStatus]);
+
+  // Пока не трогали поле руками — предлагаем максимум, что влезет сегодня
+  const suggestedBatch = useMemo(() => {
+    if (!status) return 0;
+    const roomToday = status.left_today ?? status.daily_limit;
+    return Math.max(0, Math.min(status.pending, roomToday));
+  }, [status]);
+
+  useEffect(() => {
+    if (!batchTouched) setBatch(suggestedBatch ? String(suggestedBatch) : "");
+  }, [suggestedBatch, batchTouched]);
 
   async function removeSub(id: number) {
     setSubDeleting(id);
@@ -143,9 +188,22 @@ export default function BroadcastPage() {
     setError(null);
     setMsg(null);
     try {
-      const r = await apiBroadcast({ subject, text, group: group || null });
-      if (r.ok) setMsg(`Отправка запущена: ${r.queued} писем${group ? ` (группа «${group}»)` : ""}. Идёт в фоне.`);
-      else setError(r.detail ?? "Не удалось запустить рассылку.");
+      const limit = Number(batch) > 0 ? Number(batch) : null;
+      const r = await apiBroadcast({ subject, text, group: group || null, limit });
+      if (r.ok) {
+        const tail =
+          r.remaining && r.remaining > 0
+            ? ` Осталось на следующие дни: ${r.remaining}.`
+            : " Это была последняя партия — выпуск ушёл всей группе.";
+        setMsg(
+          `Отправка запущена: ${r.queued} писем${group ? ` (группа «${group}»)` : ""}.${tail}`,
+        );
+        // счётчики подтянутся, когда фон отработает — обновим через паузу
+        window.setTimeout(async () => {
+          const st = await refreshStatus(subject, group);
+          if (st) setStatus(st);
+        }, 4000);
+      } else setError(r.detail ?? "Не удалось запустить рассылку.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -256,10 +314,62 @@ export default function BroadcastPage() {
                 </button>
               </div>
 
+              <div className="mb-4 rounded-xl border border-line bg-surface/50 p-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="w-40">
+                    <span className="mb-1.5 block text-xs text-muted">
+                      Отправить сейчас, писем
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={status?.pending || recipients}
+                      value={batch}
+                      onChange={(e) => {
+                        setBatch(e.target.value);
+                        setBatchTouched(true);
+                      }}
+                      placeholder="все"
+                      className="h-10 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm tabular-nums text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </label>
+                  <p className="flex-1 min-w-[14rem] text-xs leading-relaxed text-muted">
+                    {status ? (
+                      <>
+                        Ждут этого письма:{" "}
+                        <b className="text-ink tabular-nums">{status.pending}</b>
+                        {status.already_sent > 0 && (
+                          <> · уже получили {status.already_sent}</>
+                        )}
+                        <br />
+                        {status.sent_today !== null ? (
+                          <>
+                            Brevo сегодня: {status.sent_today} из{" "}
+                            {status.daily_limit} — можно ещё{" "}
+                            <b className="text-ink tabular-nums">
+                              {status.left_today}
+                            </b>
+                          </>
+                        ) : (
+                          <>Дневной лимит Brevo — {status.daily_limit} писем</>
+                        )}
+                      </>
+                    ) : (
+                      "Считаем остаток…"
+                    )}
+                  </p>
+                </div>
+                <p className="mt-2.5 text-xs text-subtle">
+                  Кому письмо уже ушло — запоминается по теме. Завтра нажми
+                  «Отправить» ещё раз с той же темой: продолжит с того места,
+                  повторов не будет.
+                </p>
+              </div>
+
               <button
                 type="button"
                 onClick={sendAll}
-                disabled={!canSend}
+                disabled={!canSend || status?.pending === 0}
                 className="inline-flex h-12 items-center gap-2 rounded-lg bg-accent px-6 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy === "send" ? (
@@ -267,7 +377,9 @@ export default function BroadcastPage() {
                 ) : (
                   <Send size={16} />
                 )}
-                Отправить {recipients} получателям
+                Отправить{" "}
+                {Number(batch) > 0 ? Number(batch) : (status?.pending ?? recipients)}{" "}
+                получателям
               </button>
 
               {msg && (

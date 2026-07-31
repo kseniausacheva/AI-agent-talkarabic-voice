@@ -16,22 +16,77 @@ import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db import Manager, Subscriber, get_session as get_db_session
+from app.db import Manager, Subscriber, get_session as get_db_session, get_session_factory
 from app.services.auth import require_admin
 
 router = APIRouter(prefix="/api", tags=["mailing"])
 logger = logging.getLogger(__name__)
 
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+BREVO_STATS_URL = "https://api.brevo.com/v3/smtp/statistics/aggregatedReport"
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+_FREE_DAILY_LIMIT = 300  # бесплатный тариф Brevo; фактический берём из /v3/account
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _campaign_key(subject: str) -> str:
+    """Ключ выпуска = тема письма. Одна тема = одна рассылка, разбитая на дни."""
+    return " ".join((subject or "").split()).lower()[:200]
+
+
+async def _brevo_today() -> dict:
+    """Сколько писем Brevo уже отправил сегодня и каков дневной лимит.
+
+    Считаем по самому Brevo, а не по своей базе: тест-письма и повторы тоже
+    съедают квоту. Если API недоступен — возвращаем None-значения, UI не ломаем.
+    """
+    s = get_settings()
+    out = {"sent_today": None, "daily_limit": _FREE_DAILY_LIMIT, "left_today": None}
+    if not s.brevo_api_key:
+        return out
+    today = datetime.now(timezone.utc).date().isoformat()
+    headers = {"api-key": s.brevo_api_key, "accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            stats = await client.get(
+                BREVO_STATS_URL,
+                headers=headers,
+                params={"startDate": today, "endDate": today},
+            )
+            if stats.status_code < 300:
+                out["sent_today"] = int(stats.json().get("requests") or 0)
+            acc = await client.get("https://api.brevo.com/v3/account", headers=headers)
+            if acc.status_code < 300:
+                for plan in acc.json().get("plan") or []:
+                    if plan.get("creditsType") == "sendLimit" and plan.get("credits"):
+                        out["daily_limit"] = int(plan["credits"])
+                        break
+    except Exception as exc:  # noqa: BLE001 — статистика не критична
+        logger.warning("Brevo statistics недоступна: %s", exc)
+    if out["sent_today"] is not None:
+        out["left_today"] = max(0, out["daily_limit"] - out["sent_today"])
+    return out
+
+
+async def _mark_sent(sub_ids: List[int], campaign: str) -> None:
+    """Отметить адреса как получившие этот выпуск (чтобы завтра не повторить)."""
+    if not sub_ids:
+        return
+    factory = get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            update(Subscriber)
+            .where(Subscriber.id.in_(sub_ids))
+            .values(last_campaign=campaign, last_sent_at=_now())
+        )
+        await db.commit()
 
 
 def _build_html(text: str, unsub_url: str) -> str:
@@ -67,12 +122,18 @@ async def _send_one(
 
 
 async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
-    """Фоновая отправка выпуска. recipients: [(email, name, unsub_token)]."""
+    """Фоновая отправка выпуска. recipients: [(id, email, name, unsub_token)].
+
+    Отправленные адреса помечаются `last_campaign` пачками по 20 — если
+    контейнер перезапустят на середине, повтора почти не будет.
+    """
     s = get_settings()
     sender = {"email": s.brevo_sender_email, "name": s.brevo_sender_name}
+    campaign = _campaign_key(subject)
     sent = failed = 0
+    pending: List[int] = []
     async with httpx.AsyncClient(timeout=30) as client:
-        for email, name, token in recipients:
+        for sub_id, email, name, token in recipients:
             unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/{token}"
             try:
                 code, body = await _send_one(
@@ -81,14 +142,21 @@ async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
                 )
                 if code < 300:
                     sent += 1
+                    pending.append(sub_id)
                 else:
                     failed += 1
                     logger.warning("Brevo %s для %s: %s", code, email, body[:150])
             except Exception as exc:
                 failed += 1
                 logger.warning("Ошибка отправки %s: %s", email, exc)
+            if len(pending) >= 20:
+                await _mark_sent(pending, campaign)
+                pending = []
             await asyncio.sleep(0.2)  # мягкий rate-limit
-    logger.info("Выпуск разослан: отправлено=%d, ошибок=%d", sent, failed)
+    await _mark_sent(pending, campaign)
+    logger.info(
+        "Выпуск «%s» разослан: отправлено=%d, ошибок=%d", subject[:60], sent, failed
+    )
 
 
 # ------------------------------ Картинки ------------------------------
@@ -277,6 +345,57 @@ class BroadcastRequest(BaseModel):
     text: str
     group: Optional[str] = None
     test_email: Optional[str] = None
+    limit: Optional[int] = None  # сколько писем отправить сейчас (партия)
+
+
+def _pending_query(campaign: str, group: Optional[str]):
+    """Активные подписчики группы, которым этот выпуск ещё НЕ уходил."""
+    q = select(Subscriber).where(
+        Subscriber.unsubscribed == 0,
+        func.coalesce(Subscriber.last_campaign, "") != campaign,
+    )
+    if group:
+        q = q.where(Subscriber.group_tag == group)
+    return q.order_by(Subscriber.id)
+
+
+@router.get("/broadcast/status")
+async def broadcast_status(
+    subject: str = Query(default=""),
+    group: str = Query(default=""),
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Сколько адресов ещё ждут этот выпуск и сколько писем Brevo можно сегодня.
+
+    Выпуск опознаётся по теме письма: поменяешь тему — счётчик начнётся заново.
+    """
+    campaign = _campaign_key(subject)
+    grp = group or None
+    total_q = select(func.count()).select_from(Subscriber).where(
+        Subscriber.unsubscribed == 0
+    )
+    if grp:
+        total_q = total_q.where(Subscriber.group_tag == grp)
+    group_total = (await db.execute(total_q)).scalar_one()
+
+    pending = 0
+    if campaign:
+        pending = len(
+            (await db.execute(_pending_query(campaign, grp))).scalars().all()
+        )
+    else:
+        pending = group_total
+
+    brevo = await _brevo_today()
+    return {
+        "group_total": group_total,
+        "pending": pending,
+        "already_sent": max(0, group_total - pending),
+        "sent_today": brevo["sent_today"],
+        "daily_limit": brevo["daily_limit"],
+        "left_today": brevo["left_today"],
+    }
 
 
 @router.post("/broadcast")
@@ -312,16 +431,27 @@ async def broadcast(
             raise HTTPException(status_code=502, detail=f"Brevo вернул {code}: {body[:200]}")
         return {"ok": True, "test": True, "sent": 1}
 
-    q = select(Subscriber).where(Subscriber.unsubscribed == 0)
-    if payload.group:
-        q = q.where(Subscriber.group_tag == payload.group)
-    subs = (await db.execute(q)).scalars().all()
-    recipients = [(x.email, x.name, x.unsub_token) for x in subs]
-    if not recipients:
-        raise HTTPException(status_code=400, detail="Нет активных получателей в этой группе.")
+    campaign = _campaign_key(payload.subject)
+    subs = (
+        await db.execute(_pending_query(campaign, payload.group or None))
+    ).scalars().all()
+    if not subs:
+        raise HTTPException(
+            status_code=400,
+            detail="Этот выпуск уже ушёл всем в группе. Смени тему письма или выбери другую группу.",
+        )
+
+    batch = subs
+    if payload.limit and payload.limit > 0:
+        batch = subs[: payload.limit]
+    recipients = [(x.id, x.email, x.name, x.unsub_token) for x in batch]
 
     asyncio.create_task(_send_bulk(payload.subject, payload.text, recipients))
-    return {"ok": True, "queued": len(recipients)}
+    return {
+        "ok": True,
+        "queued": len(recipients),
+        "remaining": len(subs) - len(recipients),
+    }
 
 
 @router.get("/unsubscribe/{token}", response_class=HTMLResponse)

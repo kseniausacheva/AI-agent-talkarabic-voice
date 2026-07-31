@@ -100,6 +100,14 @@ _ALLOWED_IMG = {
     "image/gif": ".gif",
     "image/webp": ".webp",
 }
+_ALLOWED_VID = {
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
+    "video/x-matroska": ".mkv",
+}
+_MAX_IMG = 5_000_000       # 5 МБ
+_MAX_VID = 50_000_000      # 50 МБ
 
 
 @router.post("/upload/image")
@@ -107,21 +115,32 @@ async def upload_image(
     file: UploadFile = File(...),
     manager: Manager = Depends(require_admin),
 ):
-    """Загрузка картинки для письма (admin) → публичный URL /uploads/…."""
+    """Загрузка медиа для письма (admin) → публичный URL /uploads/….
+    Картинки (≤5 МБ) вставляются в письмо; видео (≤50 МБ) — ссылкой."""
     ct = (file.content_type or "").lower()
-    if ct not in _ALLOWED_IMG:
-        raise HTTPException(status_code=400, detail="Только картинки: PNG, JPG, GIF, WEBP.")
+    is_video = ct in _ALLOWED_VID
+    if ct not in _ALLOWED_IMG and not is_video:
+        raise HTTPException(
+            status_code=400,
+            detail="Только картинки (PNG/JPG/GIF/WEBP) или видео (MP4/WEBM/MOV/MKV).",
+        )
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Пустой файл.")
-    if len(data) > 5_000_000:
-        raise HTTPException(status_code=400, detail="Картинка больше 5 МБ.")
+    limit = _MAX_VID if is_video else _MAX_IMG
+    if len(data) > limit:
+        mb = limit // 1_000_000
+        raise HTTPException(status_code=400, detail=f"Файл больше {mb} МБ.")
+    ext = _ALLOWED_VID[ct] if is_video else _ALLOWED_IMG[ct]
     s = get_settings()
     updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
     updir.mkdir(parents=True, exist_ok=True)
-    name = uuid.uuid4().hex + _ALLOWED_IMG[ct]
+    name = uuid.uuid4().hex + ext
     (updir / name).write_bytes(data)
-    return {"url": f"{s.public_api_url.rstrip('/')}/uploads/{name}"}
+    return {
+        "url": f"{s.public_api_url.rstrip('/')}/uploads/{name}",
+        "kind": "video" if is_video else "image",
+    }
 
 
 # ------------------------------ Подписчики ------------------------------

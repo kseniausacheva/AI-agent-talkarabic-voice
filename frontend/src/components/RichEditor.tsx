@@ -9,6 +9,7 @@ import {
   Link2,
   List,
   Loader2,
+  Video,
 } from "lucide-react";
 import { apiUploadImage } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -27,6 +28,7 @@ export function RichEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
   function sync() {
@@ -59,6 +61,31 @@ export function RichEditor({
       exec("insertImage", url);
     } catch (err) {
       window.alert("Не удалось загрузить картинку: " + (err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function onVideoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setUploading(true);
+    try {
+      const { url } = await apiUploadImage(f);
+      // видео в письме не проигрывается — вставляем кликабельную ссылку
+      ref.current?.focus();
+      document.execCommand(
+        "insertHTML",
+        false,
+        `<p><a href="${url}" target="_blank" rel="noopener" ` +
+          `style="display:inline-block;padding:10px 16px;background:#43abd0;` +
+          `color:#fff;border-radius:8px;text-decoration:none;font-weight:600">` +
+          `▶ Смотреть видео</a></p><p><br></p>`,
+      );
+      sync();
+    } catch (err) {
+      window.alert("Не удалось загрузить видео: " + (err as Error).message);
     } finally {
       setUploading(false);
     }
@@ -98,12 +125,27 @@ export function RichEditor({
         >
           по ссылке
         </button>
+        <Btn onClick={() => videoRef.current?.click()} title="Загрузить видео">
+          {uploading ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <Video size={15} />
+          )}
+          <span className="text-xs">Видео</span>
+        </Btn>
         <input
           ref={fileRef}
           type="file"
           accept="image/png,image/jpeg,image/gif,image/webp"
           className="hidden"
           onChange={onFile}
+        />
+        <input
+          ref={videoRef}
+          type="file"
+          accept="video/mp4,video/webm,video/quicktime,video/x-matroska"
+          className="hidden"
+          onChange={onVideoFile}
         />
       </div>
       <div

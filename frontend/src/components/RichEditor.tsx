@@ -11,7 +11,7 @@ import {
   Loader2,
   Video,
 } from "lucide-react";
-import { apiUploadImage } from "@/lib/api";
+import { apiUploadImage, apiUploadMediaProgress } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 /**
@@ -30,6 +30,7 @@ export function RichEditor({
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   function sync() {
     onChange(ref.current?.innerHTML ?? "");
@@ -70,9 +71,19 @@ export function RichEditor({
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
+    const mb = f.size / 1_000_000;
+    if (mb > 50) {
+      window.alert(
+        `Видео весит ${mb.toFixed(0)} МБ, а больше 50 МБ письмо не принимает.\n\n` +
+          "Обрежь ролик покороче или сожми (например, в «Фото» на телефоне " +
+          "выбери меньшее качество при отправке).",
+      );
+      return;
+    }
     setUploading(true);
+    setProgress(0);
     try {
-      const { url, preview } = await apiUploadImage(f);
+      const { url, preview } = await apiUploadMediaProgress(f, setProgress);
       // Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты:
       // вставляем живую нарезку с кнопкой Play, клик — полное видео со звуком.
       const block = preview
@@ -90,9 +101,18 @@ export function RichEditor({
       document.execCommand("insertHTML", false, block);
       sync();
     } catch (err) {
-      window.alert("Не удалось загрузить видео: " + (err as Error).message);
+      const pct = progress;
+      window.alert(
+        "Не удалось загрузить видео.\n\n" +
+          (err as Error).message +
+          (pct > 0 && pct < 100
+            ? `\n\nОборвалось на ${pct}% — значит, связь не выдержала. ` +
+              "Попробуй ещё раз или возьми ролик полегче."
+            : ""),
+      );
     } finally {
       setUploading(false);
+      setProgress(0);
     }
   }
 
@@ -141,6 +161,15 @@ export function RichEditor({
           )}
           <span className="text-xs">Видео</span>
         </Btn>
+        {uploading && (
+          <span className="ml-1 text-xs tabular-nums text-muted">
+            {progress >= 100
+              ? "готовим превью…"
+              : progress > 0
+                ? `загрузка ${progress}%`
+                : "загрузка…"}
+          </span>
+        )}
         <input
           ref={fileRef}
           type="file"

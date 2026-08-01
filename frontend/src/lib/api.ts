@@ -1,4 +1,4 @@
-import { authHeaders, clearToken } from "./auth";
+import { authHeaders, clearToken, getToken } from "./auth";
 import {
   MOCK_ADVICE,
   MOCK_DEMO_SESSION_ID,
@@ -538,6 +538,62 @@ export async function apiUploadImage(
   form.append("file", file);
   const res = await request("/api/upload/image", { method: "POST", body: form });
   return res.json();
+}
+
+/** Загрузка медиа с отображением процента (fetch процент отдавать не умеет,
+ *  поэтому XHR). onProgress(-1) — процент неизвестен. */
+export function apiUploadMediaProgress(
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<{ url: string; kind?: "image" | "video"; preview?: string }> {
+  if (USE_MOCK) {
+    return new Promise((resolve) => {
+      let p = 0;
+      const timer = window.setInterval(() => {
+        p += 20;
+        onProgress(Math.min(100, p));
+        if (p >= 100) {
+          window.clearInterval(timer);
+          resolve({ url: URL.createObjectURL(file), kind: "video" });
+        }
+      }, 200);
+    });
+  }
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/api/upload/image`);
+    const token = getToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      onProgress(e.lengthComputable ? Math.round((e.loaded / e.total) * 100) : -1);
+    };
+    // тело ушло целиком — дальше сервер режет превью, это может занять минуту
+    xhr.upload.onload = () => onProgress(100);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch {
+          reject(new Error("Сервер ответил неожиданным образом."));
+        }
+        return;
+      }
+      let detail = `Сервер ответил ${xhr.status}.`;
+      try {
+        detail = JSON.parse(xhr.responseText).detail || detail;
+      } catch {
+        /* тело не JSON — оставляем код ответа */
+      }
+      reject(new Error(detail));
+    };
+    xhr.onerror = () =>
+      reject(new Error("Связь с сервером оборвалась во время загрузки."));
+    xhr.ontimeout = () => reject(new Error("Загрузка не уложилась во время."));
+    xhr.onabort = () => reject(new Error("Загрузка отменена."));
+    xhr.send(form);
+  });
 }
 
 /** Удалить подписчика из базы рассылки (admin). */

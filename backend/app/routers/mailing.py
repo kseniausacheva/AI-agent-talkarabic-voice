@@ -198,7 +198,7 @@ def _gif_filter(width: int, fps: int) -> str:
     )
 
 
-def _render_gif(src: pathlib.Path, dst: pathlib.Path) -> bool:
+def _render_gif(src, dst: pathlib.Path) -> bool:
     """Сделать из видео зацикленный GIF-превью с кнопкой Play. True — получилось.
 
     Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты —
@@ -208,6 +208,7 @@ def _render_gif(src: pathlib.Path, dst: pathlib.Path) -> bool:
         cmd = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-t", str(seconds), "-i", str(src),
+            "-map", "0:v:0",
             "-vf", _gif_filter(width, fps),
             "-loop", "0", "-an", str(dst),
         ]
@@ -273,6 +274,127 @@ async def upload_image(
         else:
             gif.unlink(missing_ok=True)
     return out
+
+
+# --------------------- Видео по ссылке (Kinescope и др.) ---------------------
+
+_KINESCOPE_RE = re.compile(
+    r"kinescope\.io/(?:embed/)?(?:video/)?([0-9a-zA-Z_-]{6,})", re.I
+)
+_MEDIA_EXT_RE = re.compile(r"\.(mp4|webm|mov|mkv|m3u8|mpd)(\?|$)", re.I)
+
+
+def _collect_media_urls(data, out: List[str]) -> None:
+    """Собрать из ответа API все ссылки на видео — куда бы их ни положили.
+
+    Обходим структуру целиком, а не по фиксированному пути: у Kinescope поля
+    отличаются от видео к видео (assets / hls_link / download_link).
+    """
+    if isinstance(data, str):
+        if data.startswith("http") and _MEDIA_EXT_RE.search(data):
+            out.append(data)
+    elif isinstance(data, dict):
+        for value in data.values():
+            _collect_media_urls(value, out)
+    elif isinstance(data, list):
+        for item in data:
+            _collect_media_urls(item, out)
+
+
+def _first_media_url(data) -> Optional[str]:
+    """Лучшая ссылка для нарезки: обычный файл предпочтительнее плейлиста —
+    из mp4 ffmpeg тянет только начало, а HLS приходится собирать по кускам."""
+    urls: List[str] = []
+    _collect_media_urls(data, urls)
+    if not urls:
+        return None
+    files = [u for u in urls if re.search(r"\.(mp4|webm|mov|mkv)(\?|$)", u, re.I)]
+    return (files or urls)[0]
+
+
+async def _resolve_video_url(link: str) -> str:
+    """Ссылку от пользователя → то, что сможет открыть ffmpeg.
+
+    Прямая ссылка на файл идёт как есть. Kinescope сначала спрашиваем по API
+    (нужен токен), затем пробуем публичную страницу плеера.
+    """
+    link = link.strip()
+    if not link.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Ссылка должна начинаться с https://")
+    if _MEDIA_EXT_RE.search(link) and "kinescope.io" not in link.lower():
+        return link
+
+    match = _KINESCOPE_RE.search(link)
+    if not match:
+        raise HTTPException(
+            status_code=400,
+            detail="Не узнаю эту ссылку. Подойдёт ссылка на видео в Kinescope "
+            "или прямая ссылка на файл .mp4.",
+        )
+    video_id = match.group(1)
+    s = get_settings()
+
+    if s.kinescope_api_token:
+        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+            resp = await client.get(
+                f"https://api.kinescope.io/v1/videos/{video_id}",
+                headers={"Authorization": f"Bearer {s.kinescope_api_token}"},
+            )
+        if resp.status_code < 300:
+            found = _first_media_url(resp.json())
+            if found:
+                return found
+            logger.warning("Kinescope %s: в ответе нет ссылки на файл", video_id)
+        else:
+            logger.warning("Kinescope API %s: %s", resp.status_code, resp.text[:200])
+
+    # без токена (или если API не помог) — пробуем страницу плеера
+    async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
+        page = await client.get(f"https://kinescope.io/{video_id}")
+    if page.status_code < 300:
+        found = re.search(r'https://[^"\'\s]+?\.(?:m3u8|mp4)[^"\'\s]*', page.text)
+        if found:
+            return found.group(0)
+
+    raise HTTPException(
+        status_code=400,
+        detail="Не удалось получить видео по этой ссылке. Если ролик в Kinescope "
+        "закрытый, нужен токен доступа — скажи, добавим его в настройки.",
+    )
+
+
+class VideoLinkRequest(BaseModel):
+    url: str
+
+
+@router.post("/upload/video-link")
+async def upload_video_link(
+    payload: VideoLinkRequest,
+    manager: Manager = Depends(require_admin),
+):
+    """Видео по ссылке: сервер сам нарезает GIF-превью, файл никуда не грузится.
+
+    Обход для медленной связи — видео живёт в Kinescope, в письмо идёт живая
+    нарезка, а клик ведёт на исходную ссылку.
+    """
+    source = await _resolve_video_url(payload.url)
+    s = get_settings()
+    updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    gif = updir / f"{uuid.uuid4().hex}.gif"
+    ok = await asyncio.to_thread(_render_gif, source, gif)
+    if not ok:
+        gif.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=400,
+            detail="Видео нашлось, но нарезать превью не вышло. "
+            "Попробуй другую ссылку или пришли ролик файлом.",
+        )
+    return {
+        "url": payload.url.strip(),
+        "kind": "video",
+        "preview": f"{s.public_api_url.rstrip('/')}/uploads/{gif.name}",
+    }
 
 
 # ------------------------------ Подписчики ------------------------------

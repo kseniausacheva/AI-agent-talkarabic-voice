@@ -11,7 +11,11 @@ import {
   Loader2,
   Video,
 } from "lucide-react";
-import { apiUploadImage, apiUploadMediaProgress } from "@/lib/api";
+import {
+  apiUploadImage,
+  apiUploadMediaProgress,
+  apiVideoByLink,
+} from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 /**
@@ -67,6 +71,43 @@ export function RichEditor({
     }
   }
 
+  function videoBlock(url: string, preview?: string) {
+    // Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты:
+    // вставляем живую нарезку с кнопкой Play, клик — полное видео со звуком.
+    return preview
+      ? `<p style="margin:18px 0 6px"><a href="${url}" target="_blank" rel="noopener">` +
+          `<img src="${preview}" alt="Смотреть видео" width="480" ` +
+          `style="max-width:100%;height:auto;border-radius:12px;display:block"></a></p>` +
+          `<p style="margin:0 0 18px;font-size:13px"><a href="${url}" target="_blank" ` +
+          `rel="noopener" style="color:#43abd0;font-weight:600;text-decoration:none">` +
+          `▶ Смотреть видео целиком, со звуком</a></p><p><br></p>`
+      : `<p><a href="${url}" target="_blank" rel="noopener" ` +
+          `style="display:inline-block;padding:10px 16px;background:#43abd0;` +
+          `color:#fff;border-radius:8px;text-decoration:none;font-weight:600">` +
+          `▶ Смотреть видео</a></p><p><br></p>`;
+  }
+
+  async function addVideoLink() {
+    const url = window.prompt(
+      "Ссылка на видео (Kinescope или прямая ссылка на .mp4):",
+      "https://kinescope.io/",
+    );
+    if (!url || url.trim() === "https://kinescope.io/") return;
+    setUploading(true);
+    setProgress(100); // файл не грузится — сразу режем превью
+    try {
+      const { url: link, preview } = await apiVideoByLink(url.trim());
+      ref.current?.focus();
+      document.execCommand("insertHTML", false, videoBlock(link, preview));
+      sync();
+    } catch (err) {
+      window.alert("Не получилось: " + (err as Error).message);
+    } finally {
+      setUploading(false);
+      setProgress(0);
+    }
+  }
+
   async function onVideoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -84,21 +125,8 @@ export function RichEditor({
     setProgress(0);
     try {
       const { url, preview } = await apiUploadMediaProgress(f, setProgress);
-      // Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты:
-      // вставляем живую нарезку с кнопкой Play, клик — полное видео со звуком.
-      const block = preview
-        ? `<p style="margin:18px 0 6px"><a href="${url}" target="_blank" rel="noopener">` +
-          `<img src="${preview}" alt="Смотреть видео" width="480" ` +
-          `style="max-width:100%;height:auto;border-radius:12px;display:block"></a></p>` +
-          `<p style="margin:0 0 18px;font-size:13px"><a href="${url}" target="_blank" ` +
-          `rel="noopener" style="color:#43abd0;font-weight:600;text-decoration:none">` +
-          `▶ Смотреть видео целиком, со звуком</a></p><p><br></p>`
-        : `<p><a href="${url}" target="_blank" rel="noopener" ` +
-          `style="display:inline-block;padding:10px 16px;background:#43abd0;` +
-          `color:#fff;border-radius:8px;text-decoration:none;font-weight:600">` +
-          `▶ Смотреть видео</a></p><p><br></p>`;
       ref.current?.focus();
-      document.execCommand("insertHTML", false, block);
+      document.execCommand("insertHTML", false, videoBlock(url, preview));
       sync();
     } catch (err) {
       const pct = progress;
@@ -161,6 +189,15 @@ export function RichEditor({
           )}
           <span className="text-xs">Видео</span>
         </Btn>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={addVideoLink}
+          className="px-1.5 text-xs text-muted transition-colors hover:text-ink"
+          title="Видео из Kinescope по ссылке — ничего не загружая"
+        >
+          по ссылке
+        </button>
         {uploading && (
           <span className="ml-1 text-xs tabular-nums text-muted">
             {progress >= 100

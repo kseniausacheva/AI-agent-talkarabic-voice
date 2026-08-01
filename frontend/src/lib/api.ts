@@ -540,6 +540,23 @@ export async function apiUploadImage(
   return res.json();
 }
 
+/** Видео по ссылке (Kinescope или прямая ссылка на файл): сервер сам нарежет
+ *  GIF-превью, файл никуда не загружается. */
+export async function apiVideoByLink(
+  url: string,
+): Promise<{ url: string; kind?: "video"; preview?: string }> {
+  if (USE_MOCK) {
+    await wait(1200);
+    return { url, kind: "video", preview: "https://placehold.co/480x270.gif" };
+  }
+  const res = await request("/api/upload/video-link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return res.json();
+}
+
 /** Загрузка медиа с отображением процента (fetch процент отдавать не умеет,
  *  поэтому XHR). onProgress(-1) — процент неизвестен. */
 export function apiUploadMediaProgress(

@@ -71,6 +71,11 @@ class Settings(BaseSettings):
         default="https://api.talkarabicnow.online",
         description="Базовый URL бэкенда — для ссылок отписки в письмах",
     )
+    kinescope_api_token: str = Field(
+        default="",
+        description="Токен Kinescope — чтобы резать превью из видео по ссылке "
+        "(пусто = только публичные и прямые ссылки на файл)",
+    )
 
     # CORS
     allowed_origins: str = Field(

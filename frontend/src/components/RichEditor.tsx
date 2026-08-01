@@ -193,10 +193,10 @@ export function RichEditor({
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={addVideoLink}
-          className="px-1.5 text-xs text-muted transition-colors hover:text-ink"
-          title="Видео из Kinescope по ссылке — ничего не загружая"
+          className="px-1.5 text-xs font-medium text-primary transition-colors hover:text-ink"
+          title="Видео по ссылке из Кинескопа — ничего не загружая с компьютера"
         >
-          по ссылке
+          из Кинескопа
         </button>
         {uploading && (
           <span className="ml-1 text-xs tabular-nums text-muted">

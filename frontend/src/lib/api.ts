@@ -525,8 +525,11 @@ export async function apiSubscribersList(opts: {
   return res.json();
 }
 
-/** Загрузить картинку для письма (admin) → публичный URL. */
-export async function apiUploadImage(file: File): Promise<{ url: string }> {
+/** Загрузить медиа для письма (admin) → публичный URL.
+ *  Для видео дополнительно приходит `preview` — GIF-нарезка для вставки в письмо. */
+export async function apiUploadImage(
+  file: File,
+): Promise<{ url: string; kind?: "image" | "video"; preview?: string }> {
   if (USE_MOCK) {
     await wait(400);
     return { url: URL.createObjectURL(file) };

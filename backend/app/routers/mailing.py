@@ -8,6 +8,7 @@ import asyncio
 import logging
 import pathlib
 import re
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -177,6 +178,59 @@ _ALLOWED_VID = {
 _MAX_IMG = 5_000_000       # 5 МБ
 _MAX_VID = 50_000_000      # 50 МБ
 
+_PLAY_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+# Ступени качества GIF: (ширина, fps, секунд). Если файл вышел тяжёлым —
+# берём следующую, более скромную. Тяжёлый GIF в письме грузится вечность.
+_GIF_STEPS = ((480, 10, 6), (400, 8, 5), (320, 6, 3))
+_GIF_MAX_BYTES = 3_500_000
+
+
+def _gif_filter(width: int, fps: int) -> str:
+    """fps+scale, поверх — кнопка Play, затем палитра (два прохода в одном фильтре)."""
+    play = (
+        f"drawtext=fontfile={_PLAY_FONT}:text=▶:fontcolor=white@0.95:"
+        f"fontsize={max(28, width // 8)}:x=(w-text_w)/2:y=(h-text_h)/2-4:"
+        f"box=1:boxcolor=black@0.42:boxborderw={max(14, width // 24)}"
+    )
+    return (
+        f"fps={fps},scale={width}:-2:flags=lanczos,{play},split[a][b];"
+        "[a]palettegen=max_colors=160[p];[b][p]paletteuse=dither=bayer:bayer_scale=3"
+    )
+
+
+def _render_gif(src: pathlib.Path, dst: pathlib.Path) -> bool:
+    """Сделать из видео зацикленный GIF-превью с кнопкой Play. True — получилось.
+
+    Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты —
+    поэтому в письмо идёт живая нарезка, а клик по ней ведёт на полное видео.
+    """
+    for width, fps, seconds in _GIF_STEPS:
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-t", str(seconds), "-i", str(src),
+            "-vf", _gif_filter(width, fps),
+            "-loop", "0", "-an", str(dst),
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=180)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            logger.warning("GIF-превью не собрано (%s): %s", src.name, exc)
+            return False
+        if proc.returncode != 0:
+            logger.warning(
+                "ffmpeg %s для %s: %s",
+                proc.returncode, src.name, proc.stderr.decode("utf-8", "replace")[:300],
+            )
+            return False
+        if dst.exists() and dst.stat().st_size <= _GIF_MAX_BYTES:
+            logger.info(
+                "GIF-превью %s: %dx, %d fps, %d c, %.1f МБ",
+                dst.name, width, fps, seconds, dst.stat().st_size / 1e6,
+            )
+            return True
+    # даже самая скромная ступень вышла тяжёлой — отдаём как есть
+    return dst.exists()
+
 
 @router.post("/upload/image")
 async def upload_image(
@@ -184,7 +238,10 @@ async def upload_image(
     manager: Manager = Depends(require_admin),
 ):
     """Загрузка медиа для письма (admin) → публичный URL /uploads/….
-    Картинки (≤5 МБ) вставляются в письмо; видео (≤50 МБ) — ссылкой."""
+
+    Картинки (≤5 МБ) вставляются как есть. Для видео (≤50 МБ) дополнительно
+    режется GIF-превью (`preview`): его почта показывает прямо в письме,
+    а клик по нему открывает полное видео со звуком."""
     ct = (file.content_type or "").lower()
     is_video = ct in _ALLOWED_VID
     if ct not in _ALLOWED_IMG and not is_video:
@@ -203,12 +260,19 @@ async def upload_image(
     s = get_settings()
     updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
     updir.mkdir(parents=True, exist_ok=True)
-    name = uuid.uuid4().hex + ext
+    stem = uuid.uuid4().hex
+    name = stem + ext
     (updir / name).write_bytes(data)
-    return {
-        "url": f"{s.public_api_url.rstrip('/')}/uploads/{name}",
-        "kind": "video" if is_video else "image",
-    }
+    base = s.public_api_url.rstrip("/")
+    out = {"url": f"{base}/uploads/{name}", "kind": "video" if is_video else "image"}
+    if is_video:
+        gif = updir / f"{stem}.gif"
+        ok = await asyncio.to_thread(_render_gif, updir / name, gif)
+        if ok:
+            out["preview"] = f"{base}/uploads/{gif.name}"
+        else:
+            gif.unlink(missing_ok=True)
+    return out
 
 
 # ------------------------------ Подписчики ------------------------------

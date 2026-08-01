@@ -72,17 +72,22 @@ export function RichEditor({
     if (!f) return;
     setUploading(true);
     try {
-      const { url } = await apiUploadImage(f);
-      // видео в письме не проигрывается — вставляем кликабельную ссылку
-      ref.current?.focus();
-      document.execCommand(
-        "insertHTML",
-        false,
-        `<p><a href="${url}" target="_blank" rel="noopener" ` +
+      const { url, preview } = await apiUploadImage(f);
+      // Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты:
+      // вставляем живую нарезку с кнопкой Play, клик — полное видео со звуком.
+      const block = preview
+        ? `<p style="margin:18px 0 6px"><a href="${url}" target="_blank" rel="noopener">` +
+          `<img src="${preview}" alt="Смотреть видео" width="480" ` +
+          `style="max-width:100%;height:auto;border-radius:12px;display:block"></a></p>` +
+          `<p style="margin:0 0 18px;font-size:13px"><a href="${url}" target="_blank" ` +
+          `rel="noopener" style="color:#43abd0;font-weight:600;text-decoration:none">` +
+          `▶ Смотреть видео целиком, со звуком</a></p><p><br></p>`
+        : `<p><a href="${url}" target="_blank" rel="noopener" ` +
           `style="display:inline-block;padding:10px 16px;background:#43abd0;` +
           `color:#fff;border-radius:8px;text-decoration:none;font-weight:600">` +
-          `▶ Смотреть видео</a></p><p><br></p>`,
-      );
+          `▶ Смотреть видео</a></p><p><br></p>`;
+      ref.current?.focus();
+      document.execCommand("insertHTML", false, block);
       sync();
     } catch (err) {
       window.alert("Не удалось загрузить видео: " + (err as Error).message);
@@ -125,7 +130,10 @@ export function RichEditor({
         >
           по ссылке
         </button>
-        <Btn onClick={() => videoRef.current?.click()} title="Загрузить видео">
+        <Btn
+          onClick={() => videoRef.current?.click()}
+          title="Загрузить видео — в письмо ляжет живое превью, клик открывает полное"
+        >
           {uploading ? (
             <Loader2 size={15} className="animate-spin" />
           ) : (

@@ -181,11 +181,13 @@ _MAX_VID = 50_000_000      # 50 МБ
 _PLAY_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 # Ступени качества GIF: (ширина, fps, секунд). Если файл вышел тяжёлым —
 # берём следующую, более скромную. Тяжёлый GIF в письме грузится вечность.
-_GIF_STEPS = ((480, 10, 6), (400, 8, 5), (320, 6, 3))
-_GIF_MAX_BYTES = 3_500_000
+# (ширина, fps, секунд, цветов). Вес важнее красоты: письмо с тяжёлым GIF
+# на телефоне рисуется сверху вниз, и получатель видит обрезок вместо кадра.
+_GIF_STEPS = ((400, 7, 4, 96), (360, 6, 4, 64), (300, 5, 3, 48))
+_GIF_MAX_BYTES = 500_000
 
 
-def _gif_filter(width: int, fps: int) -> str:
+def _gif_filter(width: int, fps: int, colors: int) -> str:
     """fps+scale, поверх — кнопка Play, затем палитра (два прохода в одном фильтре)."""
     play = (
         f"drawtext=fontfile={_PLAY_FONT}:text=▶:fontcolor=white@0.95:"
@@ -194,7 +196,8 @@ def _gif_filter(width: int, fps: int) -> str:
     )
     return (
         f"fps={fps},scale={width}:-2:flags=lanczos,{play},split[a][b];"
-        "[a]palettegen=max_colors=160[p];[b][p]paletteuse=dither=bayer:bayer_scale=3"
+        f"[a]palettegen=max_colors={colors}[p];"
+        "[b][p]paletteuse=dither=bayer:bayer_scale=5"
     )
 
 
@@ -204,29 +207,31 @@ def _render_gif(src, dst: pathlib.Path) -> bool:
     Почта не проигрывает видео (кроме Apple Mail), но GIF крутят все клиенты —
     поэтому в письмо идёт живая нарезка, а клик по ней ведёт на полное видео.
     """
-    for width, fps, seconds in _GIF_STEPS:
+    # источником бывает и файл, и ссылка — в лог пишем что-то короткое
+    label = getattr(src, "name", str(src))[-60:]
+    for width, fps, seconds, colors in _GIF_STEPS:
         cmd = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-t", str(seconds), "-i", str(src),
             "-map", "0:v:0",
-            "-vf", _gif_filter(width, fps),
+            "-vf", _gif_filter(width, fps, colors),
             "-loop", "0", "-an", str(dst),
         ]
         try:
             proc = subprocess.run(cmd, capture_output=True, timeout=180)
         except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-            logger.warning("GIF-превью не собрано (%s): %s", src.name, exc)
+            logger.warning("GIF-превью не собрано (%s): %s", label, exc)
             return False
         if proc.returncode != 0:
             logger.warning(
                 "ffmpeg %s для %s: %s",
-                proc.returncode, src.name, proc.stderr.decode("utf-8", "replace")[:300],
+                proc.returncode, label, proc.stderr.decode("utf-8", "replace")[:300],
             )
             return False
         if dst.exists() and dst.stat().st_size <= _GIF_MAX_BYTES:
             logger.info(
-                "GIF-превью %s: %dx, %d fps, %d c, %.1f МБ",
-                dst.name, width, fps, seconds, dst.stat().st_size / 1e6,
+                "GIF-превью %s: %dx, %d fps, %d c, %d цветов, %d КБ",
+                dst.name, width, fps, seconds, colors, dst.stat().st_size // 1024,
             )
             return True
     # даже самая скромная ступень вышла тяжёлой — отдаём как есть

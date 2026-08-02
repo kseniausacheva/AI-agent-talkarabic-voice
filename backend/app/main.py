@@ -1,4 +1,5 @@
 """FastAPI entry point. Preload Whisper при старте, регистрация роутеров, CORS."""
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.routers import (
     mailing,
     session,
 )
+from app.routers.mailing import run_due_broadcasts
 from app.services.transcription import get_transcription_service
 
 
@@ -49,7 +51,33 @@ async def lifespan(app: FastAPI):
         get_transcription_service().preload()
     except Exception as exc:
         logger.exception("Whisper preload failed: %s", exc)
-    yield
+
+    scheduler = asyncio.create_task(_mailing_scheduler())
+    try:
+        yield
+    finally:
+        scheduler.cancel()
+
+
+async def _mailing_scheduler() -> None:
+    """Раз в минуту смотрит, не пора ли разослать отложенный выпуск.
+
+    Живёт внутри приложения, а не во внешнем cron: контейнер всё равно
+    работает постоянно, а состояние лежит в базе на volume — переживает
+    перезапуск. Одна ошибка не должна убивать цикл, поэтому ловим всё.
+    """
+    logger = logging.getLogger(__name__)
+    await asyncio.sleep(20)  # дать приложению встать
+    while True:
+        try:
+            started = await run_due_broadcasts()
+            if started:
+                logger.info("Планировщик: запущено выпусков — %d", started)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("Планировщик рассылки споткнулся: %s", exc)
+        await asyncio.sleep(60)
 
 
 def create_app() -> FastAPI:

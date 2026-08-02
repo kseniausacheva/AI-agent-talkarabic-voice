@@ -347,6 +347,20 @@ export type BroadcastResult = {
   detail?: string;
 };
 
+/** Запланированный выпуск (GET /api/broadcast/scheduled). */
+export type ScheduledBroadcast = {
+  id: number;
+  subject: string;
+  group: string;
+  limit: number;
+  repeat_daily: boolean;
+  run_at: string; // UTC ISO
+  tz_label: string;
+  status: "pending" | "done" | "cancelled" | "failed";
+  sent_total: number;
+  last_error: string | null;
+};
+
 /** Ход выпуска и дневной лимит Brevo (GET /api/broadcast/status). */
 export type BroadcastStatus = {
   group_total: number;

@@ -10,8 +10,9 @@ import pathlib
 import re
 import subprocess
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
@@ -21,7 +22,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.db import Manager, Subscriber, get_session as get_db_session, get_session_factory
+from app.db import (
+    Manager,
+    ScheduledBroadcast,
+    Subscriber,
+    get_session as get_db_session,
+    get_session_factory,
+)
 from app.services.auth import require_admin
 
 router = APIRouter(prefix="/api", tags=["mailing"])
@@ -643,6 +650,166 @@ async def broadcast(
         "queued": len(recipients),
         "remaining": len(subs) - len(recipients),
     }
+
+
+# --------------------------- Отложенные выпуски ---------------------------
+
+_TZ_LABELS = {"Europe/Moscow": "МСК", "Africa/Cairo": "Каир", "UTC": "UTC"}
+
+
+class ScheduleRequest(BaseModel):
+    subject: str
+    text: str
+    group: Optional[str] = None
+    limit: Optional[int] = None
+    run_at_local: str          # «2026-08-02T08:00» — как набрано в поле
+    tz: str = "Europe/Moscow"
+    repeat_daily: bool = False
+
+
+def _to_utc(local_str: str, tz_name: str) -> datetime:
+    """«2026-08-02T08:00» + зона → момент в UTC."""
+    try:
+        naive = datetime.fromisoformat(local_str.replace("Z", "").strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Не разобрал дату и время.")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Не знаю такого часового пояса.")
+    if naive.tzinfo is None:
+        naive = naive.replace(tzinfo=tz)
+    return naive.astimezone(timezone.utc)
+
+
+@router.post("/broadcast/schedule")
+async def schedule_broadcast(
+    payload: ScheduleRequest,
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Поставить выпуск на время. Письма уйдут сами, ничего держать открытым не надо."""
+    s = get_settings()
+    if not s.brevo_api_key or not s.brevo_sender_email:
+        raise HTTPException(status_code=400, detail="Рассылка не настроена (нет ключей Brevo).")
+    if not payload.subject.strip() or not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Заполни тему и текст письма.")
+
+    run_at = _to_utc(payload.run_at_local, payload.tz)
+    if run_at < datetime.now(timezone.utc) - timedelta(minutes=2):
+        raise HTTPException(status_code=400, detail="Это время уже прошло.")
+
+    row = ScheduledBroadcast(
+        subject=payload.subject.strip(),
+        body=payload.text,
+        group_tag=payload.group or "",
+        batch_limit=max(0, payload.limit or 0),
+        repeat_daily=1 if payload.repeat_daily else 0,
+        run_at=run_at.isoformat(),
+        tz_label=_TZ_LABELS.get(payload.tz, payload.tz),
+        status="pending",
+        created_at=_now(),
+        created_by=manager.username,
+    )
+    db.add(row)
+    await db.commit()
+    return {"ok": True, "id": row.id, "run_at": row.run_at}
+
+
+@router.get("/broadcast/scheduled")
+async def list_scheduled(
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Что стоит в очереди и что уже отработало (последние 20)."""
+    rows = (
+        await db.execute(
+            select(ScheduledBroadcast).order_by(ScheduledBroadcast.run_at.desc()).limit(20)
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "subject": r.subject,
+                "group": r.group_tag or "",
+                "limit": r.batch_limit,
+                "repeat_daily": bool(r.repeat_daily),
+                "run_at": r.run_at,
+                "tz_label": r.tz_label,
+                "status": r.status,
+                "sent_total": r.sent_total,
+                "last_error": r.last_error,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.delete("/broadcast/scheduled/{item_id}")
+async def cancel_scheduled(
+    item_id: int = Path(...),
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Отменить запланированный выпуск (если ещё не ушёл)."""
+    row = await db.get(ScheduledBroadcast, item_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Такого выпуска нет.")
+    if row.status == "pending":
+        row.status = "cancelled"
+        await db.commit()
+    return {"ok": True, "status": row.status}
+
+
+async def run_due_broadcasts() -> int:
+    """Разослать всё, чему настало время. Вызывается планировщиком раз в минуту.
+
+    Возвращает число запущенных выпусков. Внутри — та же логика партий, что и
+    у ручной отправки: адрес, уже получивший эту тему, второй раз не берётся.
+    """
+    factory = get_session_factory()
+    started = 0
+    now = datetime.now(timezone.utc)
+    async with factory() as db:
+        due = (
+            await db.execute(
+                select(ScheduledBroadcast)
+                .where(ScheduledBroadcast.status == "pending")
+                .where(ScheduledBroadcast.run_at <= now.isoformat())
+            )
+        ).scalars().all()
+        for item in due:
+            campaign = _campaign_key(item.subject)
+            subs = (
+                await db.execute(_pending_query(campaign, item.group_tag or None))
+            ).scalars().all()
+            if not subs:
+                item.status = "done"
+                logger.info("Отложенный выпуск #%s: получателей не осталось", item.id)
+                continue
+            batch = subs[: item.batch_limit] if item.batch_limit else subs
+            recipients = [(x.id, x.email, x.name, x.unsub_token) for x in batch]
+            asyncio.create_task(_send_bulk(item.subject, item.body, recipients))
+            item.sent_total += len(recipients)
+            started += 1
+            remaining = len(subs) - len(recipients)
+            if item.repeat_daily and remaining > 0:
+                # следующая партия — завтра в то же время
+                item.run_at = (
+                    datetime.fromisoformat(item.run_at) + timedelta(days=1)
+                ).isoformat()
+                logger.info(
+                    "Отложенный выпуск #%s: ушло %d, осталось %d — повтор завтра",
+                    item.id, len(recipients), remaining,
+                )
+            else:
+                item.status = "done"
+                logger.info(
+                    "Отложенный выпуск #%s: ушло %d писем", item.id, len(recipients)
+                )
+        await db.commit()
+    return started
 
 
 @router.get("/unsubscribe/{token}", response_class=HTMLResponse)

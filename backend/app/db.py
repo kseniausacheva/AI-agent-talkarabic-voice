@@ -116,6 +116,43 @@ class Subscriber(Base):
     last_sent_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
 
+class ScheduledBroadcast(Base):
+    """Выпуск, поставленный на время. Разбирает планировщик в app.main."""
+
+    __tablename__ = "scheduled_broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    group_tag: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    # сколько писем за один запуск (0 = всем, кто ещё не получил)
+    batch_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # повторять каждый день, пока выпуск не уйдёт всей группе
+    repeat_daily: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    run_at: Mapped[str] = mapped_column(String(40), nullable=False)  # UTC ISO
+    tz_label: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    # pending | done | cancelled | failed
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    sent_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_by: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+
+
 # Миграции: колонка → DDL (добавляется, если PRAGMA её не видит)
 _CHECKLIST_MIGRATIONS = {
     "insights_json": "ALTER TABLE checklists ADD COLUMN insights_json TEXT",

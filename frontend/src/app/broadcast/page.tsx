@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  CalendarClock,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -18,15 +19,32 @@ import { RichEditor } from "@/components/RichEditor";
 import {
   apiBroadcast,
   apiBroadcastStatus,
+  apiCancelScheduled,
   apiDeleteSubscriber,
+  apiScheduleBroadcast,
+  apiScheduledList,
   apiSubscribers,
   apiSubscribersList,
 } from "@/lib/api";
 import type {
   BroadcastStatus,
+  ScheduledBroadcast,
   SubscribersInfo,
   SubscribersListResponse,
 } from "@/lib/types";
+
+/** «2026-08-02T05:00:00+00:00» → «завтра, 2 августа, 08:00» — во времени
+ *  того, кто смотрит: браузер сам переведёт UTC в местное. */
+function fmtRunAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function BroadcastPage() {
   const [info, setInfo] = useState<SubscribersInfo | null>(null);
@@ -35,7 +53,7 @@ export default function BroadcastPage() {
   const [text, setText] = useState("");
   const [group, setGroup] = useState<string>(""); // "" = все активные
   const [testEmail, setTestEmail] = useState("");
-  const [busy, setBusy] = useState<"test" | "send" | null>(null);
+  const [busy, setBusy] = useState<"test" | "send" | "schedule" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,6 +61,12 @@ export default function BroadcastPage() {
   const [status, setStatus] = useState<BroadcastStatus | null>(null);
   const [batch, setBatch] = useState("");
   const [batchTouched, setBatchTouched] = useState(false);
+
+  // Отложенная отправка
+  const [runAt, setRunAt] = useState("");
+  const [tz, setTz] = useState("Europe/Moscow");
+  const [repeatDaily, setRepeatDaily] = useState(false);
+  const [scheduled, setScheduled] = useState<ScheduledBroadcast[]>([]);
 
   // База подписчиков (список)
   const [subs, setSubs] = useState<SubscribersListResponse | null>(null);
@@ -180,6 +204,58 @@ export default function BroadcastPage() {
       setError((e as Error).message);
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function refreshScheduled() {
+    try {
+      const { items } = await apiScheduledList();
+      setScheduled(items);
+    } catch {
+      // список необязателен — не ломаем страницу
+    }
+  }
+
+  useEffect(() => {
+    refreshScheduled();
+  }, []);
+
+  async function schedule() {
+    setBusy("schedule");
+    setError(null);
+    setMsg(null);
+    try {
+      const r = await apiScheduleBroadcast({
+        subject,
+        text,
+        group: group || null,
+        limit: Number(batch) > 0 ? Number(batch) : null,
+        run_at_local: runAt,
+        tz,
+        repeat_daily: repeatDaily,
+      });
+      if (r.ok) {
+        setMsg(
+          `Запланировано на ${fmtRunAt(r.run_at ?? runAt)}. ` +
+            (repeatDaily
+              ? "Дальше будет повторяться каждый день, пока не уйдёт всем."
+              : "Письма уйдут сами, держать вкладку открытой не нужно."),
+        );
+        await refreshScheduled();
+      } else setError(r.detail ?? "Не удалось запланировать.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function cancelScheduled(id: number) {
+    try {
+      await apiCancelScheduled(id);
+      await refreshScheduled();
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -365,6 +441,99 @@ export default function BroadcastPage() {
                   повторов не будет.
                 </p>
               </div>
+
+              <div className="mb-4 rounded-xl border border-line bg-surface/50 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink">
+                  <CalendarClock size={16} className="text-primary" />
+                  Отправить не сейчас, а по расписанию
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label>
+                    <span className="mb-1.5 block text-xs text-muted">Когда</span>
+                    <input
+                      type="datetime-local"
+                      value={runAt}
+                      onChange={(e) => setRunAt(e.target.value)}
+                      className="h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1.5 block text-xs text-muted">Время</span>
+                    <select
+                      value={tz}
+                      onChange={(e) => setTz(e.target.value)}
+                      className="h-10 rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="Europe/Moscow">московское</option>
+                      <option value="Africa/Cairo">каирское</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={schedule}
+                    disabled={!canSend || !runAt}
+                    className="btn btn-secondary btn-sm h-10 disabled:opacity-50"
+                  >
+                    {busy === "schedule" ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <CalendarClock size={14} />
+                    )}
+                    Запланировать
+                  </button>
+                </div>
+                <label className="mt-3 flex items-start gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={repeatDaily}
+                    onChange={(e) => setRepeatDaily(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Повторять каждый день в это же время, пока письмо не уйдёт
+                    всем. Так вся база (657) разойдётся сама за три дня, не
+                    упираясь в дневной лимит.
+                  </span>
+                </label>
+              </div>
+
+              {scheduled.length > 0 && (
+                <div className="mb-5 rounded-xl border border-line bg-bg p-1">
+                  {scheduled.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 border-b border-line px-3 py-2.5 last:border-b-0"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm text-ink">{s.subject}</div>
+                        <div className="text-xs text-muted">
+                          {fmtRunAt(s.run_at)}
+                          {s.repeat_daily && " · повтор ежедневно"}
+                          {s.limit > 0 && ` · по ${s.limit} писем`}
+                          {s.sent_total > 0 && ` · ушло ${s.sent_total}`}
+                        </div>
+                      </div>
+                      {s.status === "pending" ? (
+                        <button
+                          type="button"
+                          onClick={() => cancelScheduled(s.id)}
+                          className="shrink-0 text-xs text-subtle transition-colors hover:text-danger"
+                        >
+                          отменить
+                        </button>
+                      ) : (
+                        <span className="shrink-0 text-xs text-subtle">
+                          {s.status === "done"
+                            ? "отправлено"
+                            : s.status === "cancelled"
+                              ? "отменено"
+                              : "ошибка"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <button
                 type="button"

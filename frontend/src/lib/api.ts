@@ -27,6 +27,7 @@ import type {
   ContactUpdate,
   BroadcastResult,
   BroadcastStatus,
+  ScheduledBroadcast,
   DealInfo,
   DealUpdate,
   FunnelColumn,
@@ -538,6 +539,62 @@ export async function apiUploadImage(
   form.append("file", file);
   const res = await request("/api/upload/image", { method: "POST", body: form });
   return res.json();
+}
+
+/** Поставить выпуск на время. run_at_local — как набрано в поле («2026-08-02T08:00»). */
+export async function apiScheduleBroadcast(payload: {
+  subject: string;
+  text: string;
+  group?: string | null;
+  limit?: number | null;
+  run_at_local: string;
+  tz: string;
+  repeat_daily: boolean;
+}): Promise<{ ok: boolean; id?: number; run_at?: string; detail?: string }> {
+  if (USE_MOCK) {
+    await wait(400);
+    return { ok: true, id: 1, run_at: payload.run_at_local };
+  }
+  const res = await request("/api/broadcast/schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+/** Что стоит в очереди на отправку. */
+export async function apiScheduledList(): Promise<{ items: ScheduledBroadcast[] }> {
+  if (USE_MOCK) {
+    await wait(250);
+    return {
+      items: [
+        {
+          id: 1,
+          subject: "Новый поток египетского",
+          group: "",
+          limit: 300,
+          repeat_daily: true,
+          run_at: "2026-08-02T05:00:00+00:00",
+          tz_label: "МСК",
+          status: "pending",
+          sent_total: 0,
+          last_error: null,
+        },
+      ],
+    };
+  }
+  const res = await request("/api/broadcast/scheduled");
+  return res.json();
+}
+
+/** Отменить запланированный выпуск. */
+export async function apiCancelScheduled(id: number): Promise<void> {
+  if (USE_MOCK) {
+    await wait(200);
+    return;
+  }
+  await request(`/api/broadcast/scheduled/${id}`, { method: "DELETE" });
 }
 
 /** Видео по ссылке (Kinescope или прямая ссылка на файл): сервер сам нарежет

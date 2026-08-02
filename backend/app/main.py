@@ -21,6 +21,7 @@ from app.routers import (
     cron,
     health,
     knowledge,
+    leads,
     mailing,
     session,
 )
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(cron.router)
     app.include_router(knowledge.router)
     app.include_router(mailing.router)
+    app.include_router(leads.router)
 
     # Статика: загруженные картинки для писем (публично, для email-клиентов)
     updir = uploads_dir()

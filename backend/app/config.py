@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     cron_secret: str = Field(
         default="", description="Секрет для POST /api/cron/* (пусто = cron выключен)"
     )
+    leads_secret: str = Field(
+        default="",
+        description="Секрет для приёма заявок POST /api/leads/inbound "
+        "(директ инстаграма через BotHelp и т.п.); пусто = приём выключен",
+    )
 
     # Email-рассылки (Brevo)
     brevo_api_key: str = Field(

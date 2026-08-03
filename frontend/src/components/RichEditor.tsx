@@ -35,6 +35,7 @@ export function RichEditor({
   const videoRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   function sync() {
     onChange(ref.current?.innerHTML ?? "");
@@ -51,9 +52,62 @@ export function RichEditor({
     if (url) exec("createLink", url);
   }
 
+  /** Размер выделенного текста. Браузер умеет только «размеры 1–7» и вставляет
+   *  устаревший тег <font>, который часть почтовых клиентов игнорирует, —
+   *  поэтому сразу подменяем его на обычный span с точным размером. */
+  function setFontSize(px: number) {
+    ref.current?.focus();
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand("fontSize", false, "7");
+    ref.current?.querySelectorAll('font[size="7"]').forEach((node) => {
+      const span = document.createElement("span");
+      span.style.fontSize = `${px}px`;
+      if (px >= 20) span.style.lineHeight = "1.35";
+      while (node.firstChild) span.appendChild(node.firstChild);
+      node.replaceWith(span);
+    });
+    sync();
+  }
+
+  function setColor(color: string) {
+    ref.current?.focus();
+    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand("foreColor", false, color);
+    sync();
+  }
+
+  function insertEmoji(emoji: string) {
+    ref.current?.focus();
+    document.execCommand("insertText", false, emoji);
+    sync();
+    setEmojiOpen(false);
+  }
+
+  /** Ширина письма — 560 точек. Картинку шире надо ужать ЗАРАНЕЕ: почтовые
+   *  клиенты (особенно Outlook) не понимают max-width и рисуют оригинал,
+   *  разнося вёрстку. Поэтому ставим и атрибут width, и стиль. */
+  const LETTER_WIDTH = 560;
+
+  function insertImage(url: string) {
+    const probe = new Image();
+    const put = (w: number) => {
+      const html =
+        `<p style="margin:16px 0"><img src="${url}" alt="" width="${w}" ` +
+        `style="width:${w}px;max-width:100%;height:auto;display:block;` +
+        `border-radius:10px"></p><p><br></p>`;
+      ref.current?.focus();
+      document.execCommand("insertHTML", false, html);
+      sync();
+    };
+    probe.onload = () =>
+      put(Math.min(probe.naturalWidth || LETTER_WIDTH, LETTER_WIDTH));
+    probe.onerror = () => put(LETTER_WIDTH);
+    probe.src = url;
+  }
+
   function addImageUrl() {
     const url = window.prompt("URL картинки:", "https://");
-    if (url) exec("insertImage", url);
+    if (url) insertImage(url.trim());
   }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -63,7 +117,7 @@ export function RichEditor({
     setUploading(true);
     try {
       const { url } = await apiUploadImage(f);
-      exec("insertImage", url);
+      insertImage(url);
     } catch (err) {
       window.alert("Не удалось загрузить картинку: " + (err as Error).message);
     } finally {
@@ -163,6 +217,78 @@ export function RichEditor({
           <Link2 size={15} />
         </Btn>
         <span className="mx-1 h-5 w-px bg-line" />
+
+        {/* Размер текста */}
+        <select
+          defaultValue=""
+          onMouseDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            if (e.target.value) setFontSize(Number(e.target.value));
+            e.target.value = "";
+          }}
+          title="Размер выделенного текста"
+          className="h-7 rounded border border-line bg-bg px-1.5 text-xs text-ink focus:outline-none"
+        >
+          <option value="">Размер</option>
+          <option value="13">мелкий</option>
+          <option value="15">обычный</option>
+          <option value="18">крупный</option>
+          <option value="22">очень крупный</option>
+          <option value="28">огромный</option>
+        </select>
+
+        {/* Цвет текста */}
+        <span className="ml-1 flex items-center gap-0.5">
+          {[
+            ["#092127", "чёрный"],
+            ["#fb3501", "красный"],
+            ["#43abd0", "голубой"],
+            ["#1f9d55", "зелёный"],
+            ["#98a2a6", "серый"],
+          ].map(([color, label]) => (
+            <button
+              key={color}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setColor(color)}
+              title={`Цвет текста: ${label}`}
+              aria-label={`Цвет текста: ${label}`}
+              className="h-4 w-4 rounded-full border border-line transition-transform hover:scale-110"
+              style={{ background: color }}
+            />
+          ))}
+        </span>
+
+        {/* Смайлы */}
+        <span className="relative">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setEmojiOpen((v) => !v)}
+            title="Смайлы"
+            className="ml-1 rounded px-1.5 py-1 text-base leading-none transition-colors hover:bg-surface"
+          >
+            🙂
+          </button>
+          {emojiOpen && (
+            <div className="absolute left-0 top-9 z-20 w-64 rounded-lg border border-line bg-bg p-2 shadow-lg">
+              <div className="grid grid-cols-8 gap-0.5">
+                {EMOJI.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onMouseDown={(ev) => ev.preventDefault()}
+                    onClick={() => insertEmoji(e)}
+                    className="rounded p-1 text-lg leading-none transition-colors hover:bg-surface"
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </span>
+        <span className="mx-1 h-5 w-px bg-line" />
         <Btn onClick={() => fileRef.current?.click()} title="Загрузить картинку">
           {uploading ? (
             <Loader2 size={15} className="animate-spin" />
@@ -237,6 +363,15 @@ export function RichEditor({
     </div>
   );
 }
+
+/** Смайлы под школьные письма: приветствия, учёба, эмоции, стрелки-указатели. */
+const EMOJI = [
+  "🙂", "😊", "😍", "🤩", "😉", "😅", "🥰", "🤗",
+  "👋", "👍", "🙏", "💪", "✌️", "🤝", "👏", "🎉",
+  "📚", "✏️", "📝", "🎓", "🗣️", "🎧", "🎬", "📅",
+  "✅", "❗", "❓", "⚡", "🔥", "⭐", "💡", "🎁",
+  "➡️", "⬇️", "▶️", "🕐", "💰", "🌙", "☕", "🐫",
+];
 
 function Btn({
   onClick,

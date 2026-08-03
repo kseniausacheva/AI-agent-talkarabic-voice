@@ -116,6 +116,17 @@ def _contact_keys(contact_json: Optional[str]) -> set[str]:
     return keys
 
 
+@router.get("/inbound")
+async def inbound_check(key: str = Query(default=""), x_lead_secret: str = Header(default="")):
+    """Проверка адреса: сервисы часто дёргают ссылку обычным открытием."""
+    settings = get_settings()
+    if not settings.leads_secret:
+        raise HTTPException(status_code=403, detail="Приём заявок выключен.")
+    if settings.leads_secret not in (x_lead_secret, key):
+        raise HTTPException(status_code=403, detail="Неверный секрет.")
+    return {"ok": True, "ready": True, "hint": "Шли сюда POST с JSON — заявка попадёт в воронку."}
+
+
 @router.post("/inbound")
 async def inbound_lead(
     request: Request,
@@ -145,9 +156,12 @@ async def inbound_lead(
     try:
         raw = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Тело запроса — не JSON.")
+        raw = None
     if not isinstance(raw, dict):
-        raise HTTPException(status_code=400, detail="Ожидаю JSON-объект.")
+        # BotHelp и подобные проверяют адрес пустым запросом перед сохранением:
+        # ответим спокойно, иначе они посчитают адрес нерабочим и не сохранят.
+        logger.info("Проверочный запрос без данных — отвечаем ok")
+        return {"ok": True, "created": False, "skipped": "проверочный запрос"}
 
     # Пока настраиваем связку — пишем что пришло, чтобы разобрать поля источника
     logger.info("Входящая заявка, сырое тело: %s", json.dumps(raw, ensure_ascii=False)[:800])

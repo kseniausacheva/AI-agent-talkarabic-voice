@@ -347,6 +347,31 @@ export type BroadcastResult = {
   detail?: string;
 };
 
+/** Ход отправки и судьба писем (GET /api/broadcast/progress). */
+export type BroadcastProgress = {
+  run: {
+    subject: string;
+    total: number;
+    sent: number;
+    failed: number;
+    running: boolean;
+    started_at: string;
+    finished_at: string;
+    errors: { email: string; reason: string }[];
+  };
+  sent_today: number | null;
+  daily_limit: number;
+  left_today: number | null;
+  today: {
+    delivered?: number | null;
+    hard_bounces?: number | null;
+    soft_bounces?: number | null;
+    opens?: number | null;
+    spam?: number | null;
+    blocked?: number | null;
+  };
+};
+
 /** Запланированный выпуск (GET /api/broadcast/scheduled). */
 export type ScheduledBroadcast = {
   id: number;

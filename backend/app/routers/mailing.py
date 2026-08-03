@@ -129,6 +129,22 @@ async def _send_one(
     return resp.status_code, resp.text
 
 
+# Ход текущей отправки. В памяти, а не в базе: если контейнер перезапустят,
+# отправка всё равно прервётся — хранить её след негде и незачем.
+_run_state: dict = {
+    "campaign": "", "subject": "", "total": 0, "sent": 0, "failed": 0,
+    "running": False, "started_at": "", "finished_at": "", "errors": [],
+}
+
+
+def _run_reset(subject: str, total: int) -> None:
+    _run_state.update({
+        "campaign": _campaign_key(subject), "subject": subject, "total": total,
+        "sent": 0, "failed": 0, "running": True,
+        "started_at": _now(), "finished_at": "", "errors": [],
+    })
+
+
 async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
     """Фоновая отправка выпуска. recipients: [(id, email, name, unsub_token)].
 
@@ -140,6 +156,7 @@ async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
     campaign = _campaign_key(subject)
     sent = failed = 0
     pending: List[int] = []
+    _run_reset(subject, len(recipients))
     async with httpx.AsyncClient(timeout=30) as client:
         for sub_id, email, name, token in recipients:
             unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/{token}"
@@ -153,15 +170,20 @@ async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
                     pending.append(sub_id)
                 else:
                     failed += 1
+                    _run_state["errors"].append({"email": email, "reason": body[:180]})
                     logger.warning("Brevo %s для %s: %s", code, email, body[:150])
             except Exception as exc:
                 failed += 1
+                _run_state["errors"].append({"email": email, "reason": str(exc)[:180]})
                 logger.warning("Ошибка отправки %s: %s", email, exc)
+            _run_state["sent"], _run_state["failed"] = sent, failed
             if len(pending) >= 20:
                 await _mark_sent(pending, campaign)
                 pending = []
             await asyncio.sleep(0.2)  # мягкий rate-limit
     await _mark_sent(pending, campaign)
+    _run_state.update({"running": False, "finished_at": _now(),
+                       "sent": sent, "failed": failed})
     logger.info(
         "Выпуск «%s» разослан: отправлено=%d, ошибок=%d", subject[:60], sent, failed
     )
@@ -642,6 +664,26 @@ async def broadcast(
     batch = subs
     if payload.limit and payload.limit > 0:
         batch = subs[: payload.limit]
+
+    # Предохранитель: сверх дневной квоты Brevo письма просто не уходят —
+    # адресат ничего не получит, а адрес у нас пометится как «отправлено».
+    # Поэтому лишнее отсекаем здесь и честно говорим, сколько взяли.
+    brevo = await _brevo_today()
+    trimmed = False
+    left = brevo.get("left_today")
+    if isinstance(left, int):
+        if left <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"На сегодня лимит Brevo исчерпан "
+                f"({brevo['sent_today']} из {brevo['daily_limit']}). "
+                "Письма всё равно не уйдут — продолжи завтра с той же темой "
+                "или подключи платный тариф Brevo.",
+            )
+        if len(batch) > left:
+            batch = batch[:left]
+            trimmed = True
+
     recipients = [(x.id, x.email, x.name, x.unsub_token) for x in batch]
 
     asyncio.create_task(_send_bulk(payload.subject, payload.text, recipients))
@@ -649,7 +691,96 @@ async def broadcast(
         "ok": True,
         "queued": len(recipients),
         "remaining": len(subs) - len(recipients),
+        "trimmed_to_daily_limit": trimmed,
     }
+
+
+@router.get("/broadcast/progress")
+async def broadcast_progress(manager: Manager = Depends(require_admin)):
+    """Ход текущей (или последней) отправки + что с письмами у Brevo.
+
+    «Отправлено» — принято сервером Brevo. Доставлено ли письмо в ящик,
+    видно чуть позже: это отдельные цифры ниже, они приходят от Brevo.
+    """
+    brevo = await _brevo_today()
+    stats = {}
+    s = get_settings()
+    if s.brevo_api_key:
+        today = datetime.now(timezone.utc).date().isoformat()
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    BREVO_STATS_URL,
+                    headers={"api-key": s.brevo_api_key, "accept": "application/json"},
+                    params={"startDate": today, "endDate": today},
+                )
+                if r.status_code < 300:
+                    d = r.json()
+                    stats = {
+                        "delivered": d.get("delivered"),
+                        "hard_bounces": d.get("hardBounces"),
+                        "soft_bounces": d.get("softBounces"),
+                        "opens": d.get("uniqueOpens"),
+                        "spam": d.get("spamReports"),
+                        "blocked": d.get("blocked"),
+                    }
+        except Exception as exc:  # noqa: BLE001 — статистика не критична
+            logger.warning("Brevo statistics: %s", exc)
+    return {
+        "run": {
+            "subject": _run_state["subject"],
+            "total": _run_state["total"],
+            "sent": _run_state["sent"],
+            "failed": _run_state["failed"],
+            "running": _run_state["running"],
+            "started_at": _run_state["started_at"],
+            "finished_at": _run_state["finished_at"],
+            "errors": _run_state["errors"][:20],
+        },
+        "sent_today": brevo["sent_today"],
+        "daily_limit": brevo["daily_limit"],
+        "left_today": brevo["left_today"],
+        "today": stats,
+    }
+
+
+@router.get("/broadcast/delivery")
+async def broadcast_delivery(
+    days: int = Query(default=3, ge=1, le=30),
+    manager: Manager = Depends(require_admin),
+):
+    """Адреса, до которых письмо НЕ дошло, — прямо от Brevo, по событиям.
+
+    Жёсткий отказ (hardBounce) — такого ящика нет, адрес надо убрать из базы.
+    Мягкий (softBounce) — временно: переполнен ящик, занят сервер.
+    """
+    s = get_settings()
+    if not s.brevo_api_key:
+        raise HTTPException(status_code=400, detail="Brevo не настроен.")
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
+    problems: dict = {}
+    headers = {"api-key": s.brevo_api_key, "accept": "application/json"}
+    async with httpx.AsyncClient(timeout=25) as client:
+        for event in ("hardBounces", "softBounces", "spam", "blocked", "invalid"):
+            try:
+                r = await client.get(
+                    "https://api.brevo.com/v3/smtp/statistics/events",
+                    headers=headers,
+                    params={"startDate": since, "endDate": today,
+                            "event": event, "limit": 200},
+                )
+                if r.status_code >= 300:
+                    continue
+                for item in r.json().get("events", []):
+                    email = item.get("email")
+                    if email:
+                        problems.setdefault(email, {"email": email, "kinds": []})
+                        if event not in problems[email]["kinds"]:
+                            problems[email]["kinds"].append(event)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Brevo events %s: %s", event, exc)
+    return {"days": days, "total": len(problems), "items": list(problems.values())[:200]}
 
 
 # --------------------------- Отложенные выпуски ---------------------------

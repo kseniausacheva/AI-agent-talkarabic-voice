@@ -25,6 +25,7 @@ import type {
   ClientUpdate,
   ContactInfo,
   ContactUpdate,
+  BroadcastProgress,
   BroadcastResult,
   BroadcastStatus,
   ScheduledBroadcast,
@@ -538,6 +539,38 @@ export async function apiUploadImage(
   const form = new FormData();
   form.append("file", file);
   const res = await request("/api/upload/image", { method: "POST", body: form });
+  return res.json();
+}
+
+/** Ход текущей отправки + что Brevo сделал с письмами сегодня. */
+export async function apiBroadcastProgress(): Promise<BroadcastProgress> {
+  if (USE_MOCK) {
+    await wait(150);
+    return {
+      run: {
+        subject: "Новый поток", total: 300, sent: 187, failed: 2,
+        running: true, started_at: "", finished_at: "",
+        errors: [{ email: "bad@nowhere.zz", reason: "invalid recipient" }],
+      },
+      sent_today: 187, daily_limit: 300, left_today: 113,
+      today: { delivered: 180, hard_bounces: 2, soft_bounces: 1, opens: 12, spam: 0, blocked: 0 },
+    };
+  }
+  const res = await request("/api/broadcast/progress");
+  return res.json();
+}
+
+/** Адреса, до которых письмо не дошло (по данным Brevo). */
+export async function apiBroadcastDelivery(days = 3): Promise<{
+  days: number;
+  total: number;
+  items: { email: string; kinds: string[] }[];
+}> {
+  if (USE_MOCK) {
+    await wait(300);
+    return { days, total: 1, items: [{ email: "bad@nowhere.zz", kinds: ["hardBounces"] }] };
+  }
+  const res = await request(`/api/broadcast/delivery?days=${days}`);
   return res.json();
 }
 

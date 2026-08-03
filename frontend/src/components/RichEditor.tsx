@@ -52,14 +52,25 @@ export function RichEditor({
     if (url) exec("createLink", url);
   }
 
-  /** Размер выделенного текста. Браузер умеет только «размеры 1–7» и вставляет
-   *  устаревший тег <font>, который часть почтовых клиентов игнорирует, —
-   *  поэтому сразу подменяем его на обычный span с точным размером. */
+  /** Размер выделенного текста в точках.
+   *
+   *  Браузер сам умеет только «размеры 1–7», поэтому приём такой: помечаем
+   *  выделение седьмым размером и тут же подменяем метку на точный размер.
+   *  ВАЖНО: styleWithCSS выключаем — иначе Chrome ставит не <font size="7">,
+   *  а span с «xx-large», метка не находится, и текст остаётся огромным
+   *  независимо от выбранного числа. На всякий случай ловим оба варианта.
+   */
   function setFontSize(px: number) {
     ref.current?.focus();
-    document.execCommand("styleWithCSS", false, "true");
+    document.execCommand("styleWithCSS", false, "false");
     document.execCommand("fontSize", false, "7");
-    ref.current?.querySelectorAll('font[size="7"]').forEach((node) => {
+    const root = ref.current;
+    if (!root) return;
+    const marked = [
+      ...root.querySelectorAll('font[size="7"]'),
+      ...root.querySelectorAll<HTMLElement>('[style*="xx-large"]'),
+    ];
+    marked.forEach((node) => {
       const span = document.createElement("span");
       span.style.fontSize = `${px}px`;
       if (px >= 20) span.style.lineHeight = "1.35";
@@ -230,11 +241,14 @@ export function RichEditor({
           className="h-7 rounded border border-line bg-bg px-1.5 text-xs text-ink focus:outline-none"
         >
           <option value="">Размер</option>
-          <option value="13">мелкий</option>
-          <option value="15">обычный</option>
-          <option value="18">крупный</option>
-          <option value="22">очень крупный</option>
-          <option value="28">огромный</option>
+          <option value="12">12</option>
+          <option value="14">14</option>
+          <option value="15">15 — обычный</option>
+          <option value="16">16</option>
+          <option value="18">18</option>
+          <option value="20">20</option>
+          <option value="24">24</option>
+          <option value="28">28</option>
         </select>
 
         {/* Цвет текста */}

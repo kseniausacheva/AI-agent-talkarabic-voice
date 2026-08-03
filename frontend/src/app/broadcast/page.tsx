@@ -18,6 +18,7 @@ import { MockBanner } from "@/components/MockBanner";
 import { RichEditor } from "@/components/RichEditor";
 import {
   apiBroadcast,
+  apiBroadcastProgress,
   apiBroadcastStatus,
   apiCancelScheduled,
   apiDeleteSubscriber,
@@ -27,6 +28,7 @@ import {
   apiSubscribersList,
 } from "@/lib/api";
 import type {
+  BroadcastProgress,
   BroadcastStatus,
   ScheduledBroadcast,
   SubscribersInfo,
@@ -67,6 +69,7 @@ export default function BroadcastPage() {
   const [tz, setTz] = useState("Europe/Moscow");
   const [repeatDaily, setRepeatDaily] = useState(false);
   const [scheduled, setScheduled] = useState<ScheduledBroadcast[]>([]);
+  const [progress, setProgress] = useState<BroadcastProgress | null>(null);
 
   // База подписчиков (список)
   const [subs, setSubs] = useState<SubscribersListResponse | null>(null);
@@ -206,6 +209,28 @@ export default function BroadcastPage() {
       setBusy(null);
     }
   }
+
+  // Живой прогресс: пока идёт отправка — раз в 3 секунды, потом раз в 30,
+  // чтобы подтянуть отчёт о доставке (он приходит от сервиса с задержкой).
+  useEffect(() => {
+    let stop = false;
+    let timer: number;
+    const tick = async () => {
+      try {
+        const p = await apiBroadcastProgress();
+        if (stop) return;
+        setProgress(p);
+        timer = window.setTimeout(tick, p.run.running ? 3000 : 30000);
+      } catch {
+        if (!stop) timer = window.setTimeout(tick, 30000);
+      }
+    };
+    tick();
+    return () => {
+      stop = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   async function refreshScheduled() {
     try {
@@ -551,6 +576,54 @@ export default function BroadcastPage() {
                 получателям
               </button>
 
+              {progress && (progress.run.running || progress.run.total > 0) && (
+                <div className="mt-5 rounded-xl border border-line bg-surface/50 p-4">
+                  <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium text-ink">
+                      {progress.run.running ? "Идёт отправка" : "Последняя отправка"}
+                    </span>
+                    <span className="tabular-nums text-muted">
+                      {progress.run.sent} из {progress.run.total}
+                      {progress.run.failed > 0 && (
+                        <span className="text-danger"> · ошибок {progress.run.failed}</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-line">
+                    <div
+                      className={cnBar(progress.run.running)}
+                      style={{
+                        width: `${progress.run.total ? Math.round((progress.run.sent / progress.run.total) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted sm:grid-cols-4">
+                    <Fact label="дошло" value={progress.today.delivered} good />
+                    <Fact label="открыли" value={progress.today.opens} good />
+                    <Fact label="адрес не найден" value={progress.today.hard_bounces} />
+                    <Fact label="временный отказ" value={progress.today.soft_bounces} />
+                  </div>
+                  {progress.run.errors.length > 0 && (
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-xs text-danger">
+                        Не приняты сервером: {progress.run.errors.length}
+                      </summary>
+                      <ul className="mt-1.5 space-y-1">
+                        {progress.run.errors.map((e) => (
+                          <li key={e.email} className="text-xs text-muted">
+                            <b className="text-ink">{e.email}</b> — {e.reason.slice(0, 90)}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <p className="mt-3 text-xs text-subtle">
+                    «Отправлено» — принято почтовым сервисом. «Дошло» и отказы
+                    приходят от него позже, обычно в течение пары минут.
+                  </p>
+                </div>
+              )}
+
               {msg && (
                 <p className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-success">
                   <Check size={15} strokeWidth={3} />
@@ -697,6 +770,32 @@ export default function BroadcastPage() {
         </div>
       </main>
     </AuthGuard>
+  );
+}
+
+function cnBar(running: boolean) {
+  return `h-full rounded-full transition-all duration-500 ${
+    running ? "bg-primary" : "bg-success"
+  }`;
+}
+
+function Fact({
+  label,
+  value,
+  good,
+}: {
+  label: string;
+  value?: number | null;
+  good?: boolean;
+}) {
+  if (value === null || value === undefined) return null;
+  return (
+    <span>
+      <b className={good ? "text-success" : value > 0 ? "text-danger" : "text-ink"}>
+        {value}
+      </b>{" "}
+      {label}
+    </span>
   );
 }
 

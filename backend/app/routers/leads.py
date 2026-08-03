@@ -15,7 +15,7 @@ import uuid as _uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,56 @@ class InboundLead(BaseModel):
     email: str = ""
     text: str = ""            # что человек написал
     source: str = "Instagram"  # откуда пришёл
+
+
+# Как называют одно и то же разные сервисы. BotHelp шлёт свой формат и НЕ даёт
+# ни задать заголовок, ни собрать тело — поэтому разбираем что пришло.
+_FIELD_ALIASES = {
+    "name": ("name", "full_name", "fullname", "client_name", "title"),
+    "first": ("first_name", "firstname", "first"),
+    "last": ("last_name", "lastname", "last"),
+    "username": ("username", "user_name", "nickname", "nick", "login", "instagram"),
+    "phone": ("phone", "telephone", "tel", "mobile", "whatsapp"),
+    "email": ("email", "e_mail", "mail"),
+    "text": ("text", "message", "last_message", "message_text", "comment", "question"),
+    "source": ("source", "channel", "platform", "messenger", "utm_source"),
+}
+
+
+def _flatten(data, out: dict, depth: int = 0) -> None:
+    """Собрать все скалярные поля из вложенного JSON в один плоский словарь."""
+    if depth > 4 or not isinstance(data, (dict, list)):
+        return
+    items = data.items() if isinstance(data, dict) else enumerate(data)
+    for key, value in items:
+        if isinstance(value, (dict, list)):
+            _flatten(value, out, depth + 1)
+        elif value not in (None, "") and isinstance(key, str):
+            out.setdefault(key.strip().lower(), str(value))
+
+
+def _pick(flat: dict, kind: str) -> str:
+    for alias in _FIELD_ALIASES[kind]:
+        if flat.get(alias):
+            return flat[alias]
+    return ""
+
+
+def _lead_from_any(raw: dict) -> InboundLead:
+    """Чужой JSON → наша заявка. Незнакомые поля просто игнорируем."""
+    flat: dict = {}
+    _flatten(raw, flat)
+    name = _pick(flat, "name")
+    if not name:
+        name = " ".join(x for x in (_pick(flat, "first"), _pick(flat, "last")) if x).strip()
+    return InboundLead(
+        name=name,
+        username=_pick(flat, "username"),
+        phone=_pick(flat, "phone"),
+        email=_pick(flat, "email"),
+        text=_pick(flat, "text"),
+        source=_pick(flat, "source") or "Instagram",
+    )
 
 
 def _norm_username(value: str) -> str:
@@ -68,14 +118,19 @@ def _contact_keys(contact_json: Optional[str]) -> set[str]:
 
 @router.post("/inbound")
 async def inbound_lead(
-    payload: InboundLead,
+    request: Request,
+    key: str = Query(default=""),
     x_lead_secret: str = Header(default=""),
     db: AsyncSession = Depends(get_db_session),
 ):
     """Заявка снаружи → карточка клиента в воронке (стадия «новый»).
 
-    Повторная заявка от того же человека новую карточку НЕ создаёт: иначе
-    после каждого сообщения в директ воронка забивалась бы дублями.
+    Секрет принимаем и заголовком, и параметром ссылки (?key=…): у BotHelp в
+    настройках есть только поле адреса, заголовок туда не вписать.
+
+    Тело разбираем свободно — сервисы шлют поля как хотят. Повторная заявка от
+    того же человека новую карточку НЕ создаёт: иначе после каждого сообщения
+    в директ воронка забивалась бы дублями.
     """
     settings = get_settings()
     if not settings.leads_secret:
@@ -83,9 +138,24 @@ async def inbound_lead(
             status_code=403,
             detail="Приём заявок выключен: не задан LEADS_SECRET.",
         )
-    if x_lead_secret != settings.leads_secret:
-        logger.warning("Заявка с неверным секретом, источник %s", payload.source[:40])
+    if settings.leads_secret not in (x_lead_secret, key):
+        logger.warning("Заявка с неверным секретом от %s", request.client.host if request.client else "?")
         raise HTTPException(status_code=403, detail="Неверный секрет.")
+
+    try:
+        raw = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Тело запроса — не JSON.")
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Ожидаю JSON-объект.")
+
+    # Пока настраиваем связку — пишем что пришло, чтобы разобрать поля источника
+    logger.info("Входящая заявка, сырое тело: %s", json.dumps(raw, ensure_ascii=False)[:800])
+    payload = _lead_from_any(raw)
+    if not any((payload.name.strip(), payload.username.strip(),
+                payload.phone.strip(), payload.email.strip())):
+        logger.info("Событие без контактов — карточку не создаём")
+        return {"ok": True, "created": False, "skipped": "нет ни имени, ни контактов"}
 
     username = _norm_username(payload.username)
     email = payload.email.strip().lower()

@@ -435,7 +435,23 @@ export default function BroadcastPage() {
                     />
                   </label>
                   <p className="flex-1 min-w-[14rem] text-xs leading-relaxed text-muted">
-                    {status ? (
+                    {!subject.trim() ? (
+                      <>
+                        <b className="text-ink">Впиши тему письма</b> — и я
+                        посчитаю, кому оно ещё не уходило. Пока темы нет,
+                        считать не от чего.
+                        <br />
+                        {status?.sent_today !== null && status ? (
+                          <>
+                            Brevo сегодня: {status.sent_today} из{" "}
+                            {status.daily_limit} — можно ещё{" "}
+                            <b className="text-ink tabular-nums">
+                              {status.left_today}
+                            </b>
+                          </>
+                        ) : null}
+                      </>
+                    ) : status ? (
                       <>
                         Ждут этого письма:{" "}
                         <b className="text-ink tabular-nums">{status.pending}</b>
@@ -516,8 +532,8 @@ export default function BroadcastPage() {
                   />
                   <span>
                     Повторять каждый день в это же время, пока письмо не уйдёт
-                    всем. Так вся база (657) разойдётся сама за три дня, не
-                    упираясь в дневной лимит.
+                    всем. Так вся база ({activeTotal}) разойдётся сама за
+                    несколько дней, не упираясь в дневной лимит.
                   </span>
                 </label>
               </div>
@@ -571,9 +587,13 @@ export default function BroadcastPage() {
                 ) : (
                   <Send size={16} />
                 )}
-                Отправить{" "}
-                {Number(batch) > 0 ? Number(batch) : (status?.pending ?? recipients)}{" "}
-                получателям
+                {!subject.trim()
+                  ? "Отправить"
+                  : `Отправить ${
+                      Number(batch) > 0
+                        ? Number(batch)
+                        : (status?.pending ?? recipients)
+                    } получателям`}
               </button>
 
               {progress && (progress.run.running || progress.run.total > 0) && (

@@ -5,6 +5,8 @@
 (asyncio), тест-письмо — синхронно. Ключ/отправитель — из env (BREVO_*).
 """
 import asyncio
+import csv
+import io
 import logging
 import pathlib
 import re
@@ -15,7 +17,7 @@ from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
@@ -37,6 +39,7 @@ logger = logging.getLogger(__name__)
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 BREVO_STATS_URL = "https://api.brevo.com/v3/smtp/statistics/aggregatedReport"
 _EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+_EMAIL_FIND_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _FREE_DAILY_LIMIT = 300  # бесплатный тариф Brevo; фактический берём из /v3/account
 
 
@@ -108,7 +111,7 @@ def _build_html(text: str, unsub_url: str) -> str:
         f"{body}"
         '<hr style="margin:28px 0 12px;border:none;border-top:1px solid #eee">'
         '<p style="font-size:12px;color:#98a2a6">'
-        "Вы получили это письмо как ученик Школы арабского. "
+        "Вы получили это письмо от Школы арабского языка talkarabicnow.online. "
         f'<a href="{unsub_url}" style="color:#43abd0">Отписаться</a></p></div>'
     )
 
@@ -443,6 +446,35 @@ class ImportSubsRequest(BaseModel):
     items: List[SubscriberIn]
 
 
+async def _upsert_subscriber(
+    db: AsyncSession, email: str, name: str, group: str, company: str = "",
+) -> Optional[str]:
+    """Добавить адрес или дополнить пустые поля. → "added" / "updated" / None.
+
+    Группу у уже существующего адреса не перезаписываем: если человек уже
+    в базе (например, ученик), он остаётся в своей группе."""
+    email = (email or "").strip().lower()
+    if not _EMAIL_RE.match(email):
+        return None
+    row = (
+        await db.execute(select(Subscriber).where(Subscriber.email == email))
+    ).scalar_one_or_none()
+    if row:
+        if group and not row.group_tag:
+            row.group_tag = group
+        if name and not row.name:
+            row.name = name
+        if company and not row.company:
+            row.company = company
+        return "updated"
+    db.add(Subscriber(
+        email=email, name=name or "", group_tag=group or "", company=company or "",
+        unsubscribed=0, unsub_token=uuid.uuid4().hex, created_at=_now(),
+    ))
+    await db.flush()  # чтобы повтор адреса в том же файле нашёлся select'ом
+    return "added"
+
+
 @router.post("/subscribers/import")
 async def import_subscribers(
     payload: ImportSubsRequest,
@@ -452,27 +484,139 @@ async def import_subscribers(
     """Массовое добавление подписчиков (admin). Дедуп по email."""
     added = updated = 0
     for it in payload.items:
-        email = (it.email or "").strip().lower()
-        if not _EMAIL_RE.match(email):
-            continue
-        row = (
-            await db.execute(select(Subscriber).where(Subscriber.email == email))
-        ).scalar_one_or_none()
-        if row:
-            if it.group and not row.group_tag:
-                row.group_tag = it.group
-            if it.name and not row.name:
-                row.name = it.name
-            updated += 1
-        else:
-            db.add(Subscriber(
-                email=email, name=it.name or "", group_tag=it.group or "",
-                unsubscribed=0, unsub_token=uuid.uuid4().hex, created_at=_now(),
-            ))
-            added += 1
+        res = await _upsert_subscriber(db, it.email, it.name, it.group)
+        added += res == "added"
+        updated += res == "updated"
     await db.commit()
     total = (await db.execute(select(func.count()).select_from(Subscriber))).scalar_one()
     return {"ok": True, "added": added, "updated": updated, "total": total}
+
+
+# Заголовки колонок, по которым узнаём поля в чужой таблице (Excel/CSV).
+_COL_EMAIL = ("e-mail", "email", "mail", "почта")
+_COL_FULLNAME = ("фио", "full name", "контакт", "contact")
+_COL_SURNAME = ("surname", "last name", "lastname", "фамилия")
+_COL_FIRST = ("first name", "firstname", "name", "имя")
+_COL_COMPANY = ("company", "компания", "организация", "фирма", "organization")
+
+
+def _read_table(filename: str, data: bytes) -> List[List[str]]:
+    """Первый лист .xlsx или .csv → строки из строк."""
+    if filename.lower().endswith((".xlsx", ".xlsm")):
+        import openpyxl  # лениво: нужен только здесь
+
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Не получилось открыть Excel-файл.")
+        ws = wb.worksheets[0]
+        return [
+            ["" if c is None else str(c).strip() for c in r]
+            for r in ws.iter_rows(values_only=True)
+        ]
+    if filename.lower().endswith(".xls"):
+        raise HTTPException(
+            status_code=400,
+            detail="Старый формат .xls: пересохраните файл как .xlsx или .csv.",
+        )
+    for enc in ("utf-8-sig", "cp1251"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise HTTPException(status_code=400, detail="Не удалось прочитать кодировку CSV.")
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
+    except csv.Error:
+        dialect = csv.excel
+    return [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect)]
+
+
+def _find_col(header: List[str], keys: tuple, skip: set) -> Optional[int]:
+    for i, h in enumerate(header):
+        if i not in skip and any(k in h for k in keys):
+            return i
+    return None
+
+
+def _parse_contacts(rows: List[List[str]]) -> List[dict]:
+    """Строки таблицы → [{email, name, company}]. В одной ячейке бывает
+    два адреса («a@x.ru, b@x.ru») — берём оба, с тем же именем."""
+    rows = [r for r in rows if any(r)]
+    if not rows:
+        return []
+    header = [h.lower() for h in rows[0]]
+    c_email = _find_col(header, _COL_EMAIL, set())
+    has_header = c_email is not None
+    taken = {c_email} if has_header else set()
+    c_company = _find_col(header, _COL_COMPANY, taken)
+    if c_company is not None:
+        taken.add(c_company)
+    c_full = _find_col(header, _COL_FULLNAME, taken)
+    if c_full is not None:
+        taken.add(c_full)
+    c_last = _find_col(header, _COL_SURNAME, taken)
+    if c_last is not None:
+        taken.add(c_last)
+    c_first = _find_col(header, _COL_FIRST, taken)
+
+    def cell(r: List[str], i: Optional[int]) -> str:
+        return " ".join(r[i].split()) if i is not None and i < len(r) else ""
+
+    out = []
+    for r in rows[1:] if has_header else rows:
+        # без колонки email ищем адреса во всей строке
+        src = cell(r, c_email) if has_header else " ".join(r)
+        emails = _EMAIL_FIND_RE.findall(src)
+        if not emails:
+            continue
+        name = cell(r, c_full) or " ".join(
+            x for x in (cell(r, c_first), cell(r, c_last)) if x
+        )
+        company = cell(r, c_company)
+        for e in emails:
+            out.append({"email": e, "name": name, "company": company})
+    return out
+
+
+@router.post("/subscribers/import-file")
+async def import_subscribers_file(
+    file: UploadFile = File(...),
+    group: str = Form(...),
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Загрузить базу из Excel/CSV в группу (admin). Колонки узнаём по
+    заголовкам (E-mail, Name, Surname, Company…), дедуп по email."""
+    group = " ".join((group or "").split())
+    if not group:
+        raise HTTPException(status_code=400, detail="Укажите название группы.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустой файл.")
+    if len(data) > 10_000_000:
+        raise HTTPException(status_code=400, detail="Файл больше 10 МБ.")
+    contacts = _parse_contacts(_read_table(file.filename or "", data))
+    if not contacts:
+        raise HTTPException(status_code=400, detail="В файле не нашлось ни одного email.")
+    added = updated = 0
+    for c in contacts:
+        res = await _upsert_subscriber(db, c["email"], c["name"], group, c["company"])
+        added += res == "added"
+        updated += res == "updated"
+    await db.commit()
+    in_group = (
+        await db.execute(
+            select(func.count()).select_from(Subscriber)
+            .where(Subscriber.group_tag == group, Subscriber.unsubscribed == 0)
+        )
+    ).scalar_one()
+    return {
+        "ok": True, "group": group, "found": len(contacts),
+        "added": added, "already": updated, "in_group": in_group,
+    }
 
 
 @router.get("/subscribers")
@@ -526,7 +670,9 @@ async def subscribers_list(
     if qn:
         rows = [
             r for r in rows
-            if qn in r.email.lower() or qn in (r.name or "").lower()
+            if qn in r.email.lower()
+            or qn in (r.name or "").lower()
+            or qn in (r.company or "").lower()
         ]
     total = len(rows)
     start = (page - 1) * per_page
@@ -536,6 +682,7 @@ async def subscribers_list(
             "id": r.id,
             "email": r.email,
             "name": r.name,
+            "company": r.company or "",
             "group": r.group_tag or "",
             "unsubscribed": bool(r.unsubscribed),
         }

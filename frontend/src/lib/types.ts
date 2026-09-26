@@ -325,8 +325,19 @@ export type SubscriberRow = {
   id: number;
   email: string;
   name: string;
+  company?: string;
   group: string;
   unsubscribed: boolean;
+};
+
+/** Итог загрузки базы из файла (POST /api/subscribers/import-file). */
+export type SubscribersImportResult = {
+  ok: boolean;
+  group: string;
+  found: number;
+  added: number;
+  already: number;
+  in_group: number;
 };
 
 /** Постраничный список подписчиков (GET /api/subscribers/list). */

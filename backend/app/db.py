@@ -105,6 +105,8 @@ class Subscriber(Base):
     group_tag: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    # Фирма контакта — для деловых баз (MICE и т.п.), у учеников пусто.
+    company: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     unsubscribed: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -166,6 +168,7 @@ _MANAGER_MIGRATIONS = {
 _SUBSCRIBER_MIGRATIONS = {
     "last_campaign": "ALTER TABLE subscribers ADD COLUMN last_campaign TEXT",
     "last_sent_at": "ALTER TABLE subscribers ADD COLUMN last_sent_at TEXT",
+    "company": "ALTER TABLE subscribers ADD COLUMN company TEXT NOT NULL DEFAULT ''",
 }
 
 

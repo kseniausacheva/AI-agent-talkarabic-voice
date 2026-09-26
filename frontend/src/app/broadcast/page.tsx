@@ -11,6 +11,7 @@ import {
   Send,
   Trash2,
   TriangleAlert,
+  Upload,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -22,6 +23,7 @@ import {
   apiBroadcastStatus,
   apiCancelScheduled,
   apiDeleteSubscriber,
+  apiImportSubscribersFile,
   apiScheduleBroadcast,
   apiScheduledList,
   apiSubscribers,
@@ -31,6 +33,7 @@ import type {
   BroadcastProgress,
   BroadcastStatus,
   ScheduledBroadcast,
+  SubscribersImportResult,
   SubscribersInfo,
   SubscribersListResponse,
 } from "@/lib/types";
@@ -77,6 +80,14 @@ export default function BroadcastPage() {
   const [subsPage, setSubsPage] = useState(1);
   const [subsLoading, setSubsLoading] = useState(true);
   const [subDeleting, setSubDeleting] = useState<number | null>(null);
+  const [subsReload, setSubsReload] = useState(0);
+
+  // Загрузка новой базы из Excel/CSV
+  const [impFile, setImpFile] = useState<File | null>(null);
+  const [impGroup, setImpGroup] = useState("MICE 2026");
+  const [impBusy, setImpBusy] = useState(false);
+  const [impResult, setImpResult] = useState<SubscribersImportResult | null>(null);
+  const [impError, setImpError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +123,7 @@ export default function BroadcastPage() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [subsQ, subsPage]);
+  }, [subsQ, subsPage, subsReload]);
 
   // Ход выпуска (по теме письма) + остаток дневного лимита Brevo
   const refreshStatus = useMemo(
@@ -148,6 +159,25 @@ export default function BroadcastPage() {
   useEffect(() => {
     if (!batchTouched) setBatch(suggestedBatch ? String(suggestedBatch) : "");
   }, [suggestedBatch, batchTouched]);
+
+  async function importFile() {
+    if (!impFile || !impGroup.trim()) return;
+    setImpBusy(true);
+    setImpError(null);
+    setImpResult(null);
+    try {
+      const r = await apiImportSubscribersFile(impFile, impGroup.trim());
+      setImpResult(r);
+      setImpFile(null);
+      setGroup(r.group); // сразу выбираем новую группу для выпуска
+      setInfo(await apiSubscribers());
+      setSubsReload((n) => n + 1);
+    } catch (e) {
+      setImpError((e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  }
 
   async function removeSub(id: number) {
     setSubDeleting(id);
@@ -676,10 +706,71 @@ export default function BroadcastPage() {
                     setSubsQ(e.target.value);
                     setSubsPage(1);
                   }}
-                  placeholder="Поиск по email…"
+                  placeholder="Поиск по email, имени, фирме…"
                   className="h-10 w-full rounded-lg border border-line-strong bg-bg pl-10 pr-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </label>
+            </div>
+
+            <div className="card mb-5 p-4 sm:p-5">
+              <h3 className="text-sm font-semibold text-ink">
+                Загрузить новую базу
+              </h3>
+              <p className="mt-1 text-xs text-muted">
+                Excel (.xlsx) или CSV. Колонки с почтой, именем и фирмой найдём
+                по заголовкам. Кто уже есть в базе — останется в своей группе.
+              </p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="block sm:w-48">
+                  <span className="mb-1 block text-xs text-muted">Группа</span>
+                  <input
+                    value={impGroup}
+                    onChange={(e) => setImpGroup(e.target.value)}
+                    placeholder="Например, MICE 2026"
+                    className="h-10 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </label>
+                <label className="block min-w-0 flex-1">
+                  <span className="mb-1 block text-xs text-muted">Файл</span>
+                  <input
+                    key={subsReload}
+                    type="file"
+                    accept=".xlsx,.xlsm,.csv"
+                    onChange={(e) => {
+                      setImpFile(e.target.files?.[0] ?? null);
+                      setImpResult(null);
+                      setImpError(null);
+                    }}
+                    className="block w-full text-sm text-muted file:mr-3 file:rounded-lg file:border-0 file:bg-surface file:px-3 file:py-2 file:text-sm file:text-ink"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={importFile}
+                  disabled={!impFile || !impGroup.trim() || impBusy}
+                  className="btn btn-secondary h-10 shrink-0"
+                >
+                  {impBusy ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    <Upload size={15} />
+                  )}
+                  Загрузить
+                </button>
+              </div>
+              {impResult && (
+                <p className="mt-3 text-sm text-success">
+                  <Check size={14} className="mr-1 inline" />
+                  Добавлено {impResult.added} новых адресов в «{impResult.group}»
+                  {impResult.already > 0 &&
+                    ` · ${impResult.already} уже были в базе или повторялись в файле`}
+                  . В группе сейчас {impResult.in_group}. Группа выбрана для
+                  выпуска выше.
+                </p>
+              )}
+              {impError && (
+                <p className="mt-3 text-sm text-danger">{impError}</p>
+              )}
             </div>
 
             <div className="card overflow-x-auto">
@@ -687,6 +778,7 @@ export default function BroadcastPage() {
                 <thead>
                   <tr className="border-b border-line bg-surface text-left text-xs font-medium text-muted">
                     <th className="px-4 py-2.5 font-medium">Email</th>
+                    <th className="px-4 py-2.5 font-medium">Имя / фирма</th>
                     <th className="px-4 py-2.5 font-medium">Группа</th>
                     <th className="px-4 py-2.5 font-medium">Статус</th>
                     <th className="px-4 py-2.5 font-medium">
@@ -697,7 +789,7 @@ export default function BroadcastPage() {
                 <tbody>
                   {subsLoading && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={5} className="px-4 py-8 text-center text-muted">
                         <Loader2
                           size={15}
                           className="mr-2 inline animate-spin text-primary"
@@ -708,7 +800,7 @@ export default function BroadcastPage() {
                   )}
                   {!subsLoading && subs && subs.items.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                      <td colSpan={5} className="px-4 py-8 text-center text-muted">
                         Ничего не найдено.
                       </td>
                     </tr>
@@ -720,6 +812,9 @@ export default function BroadcastPage() {
                         className="border-b border-line last:border-b-0"
                       >
                         <td className="px-4 py-2.5 text-ink">{s.email}</td>
+                        <td className="px-4 py-2.5 text-muted">
+                          {[s.name, s.company].filter(Boolean).join(" · ") || "—"}
+                        </td>
                         <td className="px-4 py-2.5 text-muted">
                           {s.group || "—"}
                         </td>

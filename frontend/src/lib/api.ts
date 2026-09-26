@@ -42,6 +42,7 @@ import type {
   StatsResponse,
   SubmitRoundResponse,
   SubscriberRow,
+  SubscribersImportResult,
   SubscribersListResponse,
 } from "./types";
 
@@ -701,6 +702,25 @@ export function apiUploadMediaProgress(
     xhr.onabort = () => reject(new Error("Загрузка отменена."));
     xhr.send(form);
   });
+}
+
+/** Загрузить базу из Excel/CSV в группу (admin). Колонки сервер узнаёт сам. */
+export async function apiImportSubscribersFile(
+  file: File,
+  group: string,
+): Promise<SubscribersImportResult> {
+  if (USE_MOCK) {
+    await wait(600);
+    return { ok: true, group, found: 186, added: 183, already: 3, in_group: 183 };
+  }
+  const form = new FormData();
+  form.append("file", file);
+  form.append("group", group);
+  const res = await request("/api/subscribers/import-file", {
+    method: "POST",
+    body: form,
+  });
+  return res.json();
 }
 
 /** Удалить подписчика из базы рассылки (admin). */

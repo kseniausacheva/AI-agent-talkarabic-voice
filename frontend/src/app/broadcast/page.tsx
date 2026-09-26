@@ -6,12 +6,16 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Loader2,
+  Paperclip,
   Search,
   Send,
   Trash2,
   TriangleAlert,
   Upload,
+  UserX,
+  X,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -23,14 +27,18 @@ import {
   apiBroadcastStatus,
   apiCancelScheduled,
   apiDeleteSubscriber,
+  apiExcludeFromBroadcast,
   apiImportSubscribersFile,
   apiScheduleBroadcast,
   apiScheduledList,
   apiSubscribers,
   apiSubscribersList,
+  apiUploadFile,
 } from "@/lib/api";
 import type {
+  AttachmentItem,
   BroadcastProgress,
+  ExcludeResult,
   BroadcastStatus,
   ScheduledBroadcast,
   SubscribersImportResult,
@@ -57,6 +65,18 @@ export default function BroadcastPage() {
   const [subject, setSubject] = useState("");
   const [text, setText] = useState("");
   const [group, setGroup] = useState<string>(""); // "" = все активные
+  const [senderEmail, setSenderEmail] = useState<string>(""); // "" = основной
+
+  // Вложения письма (PDF-презентации и т.п.)
+  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  const [attBusy, setAttBusy] = useState(false);
+  const [attError, setAttError] = useState<string | null>(null);
+
+  // Кому этот выпуск не слать
+  const [exclLines, setExclLines] = useState("");
+  const [exclBusy, setExclBusy] = useState(false);
+  const [exclResult, setExclResult] = useState<ExcludeResult | null>(null);
+  const [exclError, setExclError] = useState<string | null>(null);
   const [testEmail, setTestEmail] = useState("");
   const [busy, setBusy] = useState<"test" | "send" | "schedule" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -160,6 +180,52 @@ export default function BroadcastPage() {
     if (!batchTouched) setBatch(suggestedBatch ? String(suggestedBatch) : "");
   }, [suggestedBatch, batchTouched]);
 
+  async function addAttachment(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setAttBusy(true);
+    setAttError(null);
+    try {
+      const a = await apiUploadFile(f);
+      setAttachments((prev) => [...prev, a]);
+    } catch (err) {
+      setAttError((err as Error).message);
+    } finally {
+      setAttBusy(false);
+    }
+  }
+
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setMsg("Ссылка на файл скопирована — вставь её в письмо кнопкой «Ссылка».");
+    } catch {
+      window.prompt("Скопируй ссылку:", url);
+    }
+  }
+
+  async function excludeLines() {
+    const lines = exclLines
+      .split(/\n|,|;/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return;
+    setExclBusy(true);
+    setExclError(null);
+    setExclResult(null);
+    try {
+      const r = await apiExcludeFromBroadcast({ subject, group: group || null, lines });
+      setExclResult(r);
+      const st = await refreshStatus(subject, group);
+      if (st) setStatus(st);
+    } catch (err) {
+      setExclError((err as Error).message);
+    } finally {
+      setExclBusy(false);
+    }
+  }
+
   async function importFile() {
     if (!impFile || !impGroup.trim()) return;
     setImpBusy(true);
@@ -230,7 +296,13 @@ export default function BroadcastPage() {
     setError(null);
     setMsg(null);
     try {
-      const r = await apiBroadcast({ subject, text, test_email: testEmail.trim() });
+      const r = await apiBroadcast({
+        subject,
+        text,
+        test_email: testEmail.trim(),
+        sender_email: senderEmail || null,
+        attachments,
+      });
       if (r.ok) setMsg(`Тест-письмо отправлено на ${testEmail.trim()}. Проверь ящик (в т.ч. спам).`);
       else setError(r.detail ?? "Не удалось отправить тест.");
     } catch (e) {
@@ -288,6 +360,8 @@ export default function BroadcastPage() {
         run_at_local: runAt,
         tz,
         repeat_daily: repeatDaily,
+        sender_email: senderEmail || null,
+        attachments,
       });
       if (r.ok) {
         setMsg(
@@ -320,7 +394,14 @@ export default function BroadcastPage() {
     setMsg(null);
     try {
       const limit = Number(batch) > 0 ? Number(batch) : null;
-      const r = await apiBroadcast({ subject, text, group: group || null, limit });
+      const r = await apiBroadcast({
+        subject,
+        text,
+        group: group || null,
+        limit,
+        sender_email: senderEmail || null,
+        attachments,
+      });
       if (r.ok) {
         const tail =
           r.remaining && r.remaining > 0
@@ -398,6 +479,23 @@ export default function BroadcastPage() {
                 </select>
               </label>
 
+              {(info.senders?.length ?? 0) > 1 && (
+                <label className="mb-4 block">
+                  <span className="mb-1.5 block text-xs text-muted">От кого</span>
+                  <select
+                    value={senderEmail}
+                    onChange={(e) => setSenderEmail(e.target.value)}
+                    className="h-11 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  >
+                    {info.senders!.map((snd, i) => (
+                      <option key={snd.email} value={i === 0 ? "" : snd.email}>
+                        {snd.name} · {snd.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <label className="mb-4 block">
                 <span className="mb-1.5 block text-xs text-muted">Тема письма</span>
                 <input
@@ -414,7 +512,136 @@ export default function BroadcastPage() {
                 <span className="mt-1.5 block text-xs text-subtle">
                   Выделяй жирным/курсивом, добавляй заголовки, списки, ссылки и
                   картинки. Ссылка «Отписаться» добавится автоматически.
+                  В тексте работают подстановки:{" "}
+                  <code className="text-[11px]">{"{{имя}}"}</code> — имя получателя
+                  (если имени нет, уберётся вместе с запятой),{" "}
+                  <code className="text-[11px]">{"{{фирма}}"}</code> — компания,{" "}
+                  <code className="text-[11px]">{"{{презентация}}"}</code> — ссылка на
+                  первое вложение.
                 </span>
+              </div>
+
+              {/* --- Вложения --- */}
+              <div className="mb-4 rounded-xl border border-line bg-surface/50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted">
+                    Вложения{attachments.length ? ` · ${attachments.length}` : ""}
+                  </span>
+                  <label className="btn btn-secondary btn-sm h-9 cursor-pointer">
+                    {attBusy ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Paperclip size={14} />
+                    )}
+                    Прикрепить файл
+                    <input
+                      type="file"
+                      accept=".pdf,.pptx,.ppt,.docx,.xlsx,.zip"
+                      className="hidden"
+                      onChange={addAttachment}
+                      disabled={attBusy || busy !== null}
+                    />
+                  </label>
+                </div>
+                {attachments.length > 0 && (
+                  <ul className="mt-3 space-y-1.5">
+                    {attachments.map((a) => (
+                      <li
+                        key={a.url}
+                        className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm"
+                      >
+                        <Paperclip size={13} className="shrink-0 text-subtle" />
+                        <span className="min-w-0 flex-1 truncate text-ink">{a.name}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-muted">
+                          {(a.size / 1_000_000).toFixed(1)} МБ
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => copyLink(a.url)}
+                          className="shrink-0 text-subtle transition-colors hover:text-ink"
+                          title="Скопировать ссылку на файл"
+                          aria-label="Скопировать ссылку"
+                        >
+                          <Copy size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAttachments((prev) => prev.filter((x) => x.url !== a.url))
+                          }
+                          className="shrink-0 text-subtle transition-colors hover:text-danger"
+                          title="Убрать вложение"
+                          aria-label="Убрать вложение"
+                        >
+                          <X size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-2 text-xs text-subtle">
+                  PDF, PPTX, DOCX, XLSX или ZIP — до 10 МБ на все вложения вместе.
+                  Тяжёлую презентацию лучше сжать: письмо с большим файлом чаще
+                  попадает в спам и медленно открывается.
+                </p>
+                {attError && <p className="mt-2 text-sm text-danger">{attError}</p>}
+              </div>
+
+              {/* --- Кому не слать --- */}
+              <div className="mb-4 rounded-xl border border-line bg-surface/50 p-4">
+                <span className="mb-1.5 block text-xs text-muted">
+                  Кому этот выпуск не отправлять
+                </span>
+                <textarea
+                  value={exclLines}
+                  onChange={(e) => setExclLines(e.target.value)}
+                  rows={3}
+                  placeholder={"Tez Tour\nivanova@agency.ru\nАльянс Авиа"}
+                  className="block w-full resize-y rounded-lg border border-line-strong bg-bg px-3 py-2 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={excludeLines}
+                    disabled={!subject.trim() || !exclLines.trim() || exclBusy}
+                    className="btn btn-secondary btn-sm h-9 disabled:opacity-50"
+                  >
+                    {exclBusy ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <UserX size={14} />
+                    )}
+                    Исключить из выпуска
+                  </button>
+                  <span className="text-xs text-subtle">
+                    Email или название фирмы, по одному в строке. Кому уже написала
+                    руками, конкуренты — они не получат письмо с этой темой.
+                    {!subject.trim() && " Сначала впиши тему."}
+                  </span>
+                </div>
+                {exclResult && (
+                  <div className="mt-3 text-sm">
+                    <p className="text-success">
+                      <Check size={14} className="mr-1 inline" />
+                      Исключено адресов: {exclResult.excluded}
+                      {exclResult.matched.length > 0 && (
+                        <span className="text-muted">
+                          {" "}
+                          — {exclResult.matched.slice(0, 8).join(", ")}
+                          {exclResult.matched.length > 8
+                            ? ` и ещё ${exclResult.matched.length - 8}`
+                            : ""}
+                        </span>
+                      )}
+                    </p>
+                    {exclResult.unmatched.length > 0 && (
+                      <p className="mt-1 text-danger">
+                        Не нашлись в базе: {exclResult.unmatched.join(", ")}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {exclError && <p className="mt-2 text-sm text-danger">{exclError}</p>}
               </div>
 
               <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface/50 p-4">

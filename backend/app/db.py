@@ -141,6 +141,9 @@ class ScheduledBroadcast(Base):
     tz_label: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    # От кого (email из списка отправителей; пусто = основной) и вложения
+    sender_email: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    attachments_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
     # pending | done | cancelled | failed
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending", server_default="pending"
@@ -169,6 +172,10 @@ _SUBSCRIBER_MIGRATIONS = {
     "last_campaign": "ALTER TABLE subscribers ADD COLUMN last_campaign TEXT",
     "last_sent_at": "ALTER TABLE subscribers ADD COLUMN last_sent_at TEXT",
     "company": "ALTER TABLE subscribers ADD COLUMN company TEXT NOT NULL DEFAULT ''",
+}
+_SCHEDULED_MIGRATIONS = {
+    "sender_email": "ALTER TABLE scheduled_broadcasts ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''",
+    "attachments_json": "ALTER TABLE scheduled_broadcasts ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'",
 }
 
 
@@ -212,6 +219,7 @@ async def init_db() -> None:
             ("checklists", _CHECKLIST_MIGRATIONS),
             ("managers", _MANAGER_MIGRATIONS),
             ("subscribers", _SUBSCRIBER_MIGRATIONS),
+            ("scheduled_broadcasts", _SCHEDULED_MIGRATIONS),
         ):
             result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
             existing_columns = {row[1] for row in result.fetchall()}

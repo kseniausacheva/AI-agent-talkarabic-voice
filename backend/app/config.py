@@ -72,6 +72,11 @@ class Settings(BaseSettings):
         default="", description="Email отправителя (должен быть verified в Brevo)"
     )
     brevo_sender_name: str = Field(default="Школа арабского Talkarabic")
+    brevo_senders: str = Field(
+        default="",
+        description="Дополнительные отправители через запятую: "
+        "«La Royal Event <sale@royaleventandmice.ru>, …» (каждый verified в Brevo)",
+    )
     public_api_url: str = Field(
         default="https://api.talkarabicnow.online",
         description="Базовый URL бэкенда — для ссылок отписки в письмах",

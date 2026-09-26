@@ -43,6 +43,8 @@ import type {
   SubmitRoundResponse,
   SubscriberRow,
   SubscribersImportResult,
+  AttachmentItem,
+  ExcludeResult,
   SubscribersListResponse,
 } from "./types";
 
@@ -441,6 +443,10 @@ export async function apiSubscribers(): Promise<SubscribersInfo> {
       ],
       configured: true,
       sender: "info@talkarabicnow.online",
+      senders: [
+        { email: "info@talkarabicnow.online", name: "Школа арабского Talkarabic" },
+        { email: "sale@royaleventandmice.ru", name: "La Royal Event" },
+      ],
     };
   }
   const res = await request("/api/subscribers");
@@ -476,6 +482,8 @@ export async function apiBroadcast(payload: {
   group?: string | null;
   test_email?: string | null;
   limit?: number | null;
+  sender_email?: string | null;
+  attachments?: AttachmentItem[];
 }): Promise<BroadcastResult> {
   if (USE_MOCK) {
     await wait(700);
@@ -584,6 +592,8 @@ export async function apiScheduleBroadcast(payload: {
   run_at_local: string;
   tz: string;
   repeat_daily: boolean;
+  sender_email?: string | null;
+  attachments?: AttachmentItem[];
 }): Promise<{ ok: boolean; id?: number; run_at?: string; detail?: string }> {
   if (USE_MOCK) {
     await wait(400);
@@ -719,6 +729,42 @@ export async function apiImportSubscribersFile(
   const res = await request("/api/subscribers/import-file", {
     method: "POST",
     body: form,
+  });
+  return res.json();
+}
+
+/** Файл-вложение письма (admin): PDF/PPTX/DOCX/XLSX/ZIP ≤ 10 МБ → ссылка + имя. */
+export async function apiUploadFile(file: File): Promise<AttachmentItem> {
+  if (USE_MOCK) {
+    await wait(500);
+    return { url: URL.createObjectURL(file), name: file.name, size: file.size };
+  }
+  const form = new FormData();
+  form.append("file", file);
+  const res = await request("/api/upload/file", { method: "POST", body: form });
+  return res.json();
+}
+
+/** Кому этот выпуск не слать: email или название фирмы, по строке. */
+export async function apiExcludeFromBroadcast(payload: {
+  subject: string;
+  group?: string | null;
+  lines: string[];
+}): Promise<ExcludeResult> {
+  if (USE_MOCK) {
+    await wait(400);
+    const lines = payload.lines.filter((l) => l.trim());
+    return {
+      ok: true,
+      excluded: Math.max(0, lines.length - 1),
+      matched: lines.slice(0, -1).map((l) => `${l.toLowerCase()}@example.com · ${l}`),
+      unmatched: lines.slice(-1),
+    };
+  }
+  const res = await request("/api/broadcast/exclude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
   return res.json();
 }

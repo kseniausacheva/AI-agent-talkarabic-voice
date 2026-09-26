@@ -318,6 +318,21 @@ export type SubscribersInfo = {
   groups: { group: string; count: number }[];
   configured: boolean;
   sender: string | null;
+  /** Кем можно подписать письмо (основной + BREVO_SENDERS). */
+  senders?: Sender[];
+};
+
+export type Sender = { email: string; name: string };
+
+/** Файл-вложение письма (POST /api/upload/file). */
+export type AttachmentItem = { url: string; name: string; size: number };
+
+/** Итог «кому не слать» (POST /api/broadcast/exclude). */
+export type ExcludeResult = {
+  ok: boolean;
+  excluded: number;
+  matched: string[];
+  unmatched: string[];
 };
 
 /** Один подписчик базы рассылки. */
@@ -395,6 +410,8 @@ export type ScheduledBroadcast = {
   status: "pending" | "done" | "cancelled" | "failed";
   sent_total: number;
   last_error: string | null;
+  sender_email?: string;
+  attachments?: number;
 };
 
 /** Ход выпуска и дневной лимит Brevo (GET /api/broadcast/status). */

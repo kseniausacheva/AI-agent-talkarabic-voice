@@ -7,6 +7,7 @@
 import asyncio
 import csv
 import io
+import json
 import logging
 import pathlib
 import re
@@ -100,34 +101,100 @@ async def _mark_sent(sub_ids: List[int], campaign: str) -> None:
         await db.commit()
 
 
-def _build_html(text: str, unsub_url: str) -> str:
+_SENDER_RE = re.compile(r"^\s*(?:(.*?)\s*<)?\s*([^<>\s]+@[^<>\s]+?)\s*>?\s*$")
+
+
+def _senders() -> List[dict]:
+    """Кем можно подписать письмо: основной отправитель из env + BREVO_SENDERS.
+
+    Формат BREVO_SENDERS: «Имя <email>, Имя <email>» (или просто email).
+    Каждый адрес должен быть verified в Brevo — иначе Brevo вернёт ошибку."""
+    s = get_settings()
+    out: List[dict] = []
+    if s.brevo_sender_email:
+        out.append({"email": s.brevo_sender_email.lower(), "name": s.brevo_sender_name})
+    for chunk in (s.brevo_senders or "").split(","):
+        m = _SENDER_RE.match(chunk)
+        if not m:
+            continue
+        email = m.group(2).lower()
+        if any(x["email"] == email for x in out):
+            continue
+        out.append({"email": email, "name": (m.group(1) or "").strip() or email})
+    return out
+
+
+def _pick_sender(email: Optional[str]) -> dict:
+    """Отправитель по email из списка; пусто → основной. Чужой адрес — 400."""
+    senders = _senders()
+    if not senders:
+        raise HTTPException(
+            status_code=400,
+            detail="Рассылка не настроена: добавь BREVO_API_KEY и BREVO_SENDER_EMAIL в env и сделай Redeploy.",
+        )
+    if not email:
+        return senders[0]
+    for x in senders:
+        if x["email"] == email.strip().lower():
+            return x
+    raise HTTPException(
+        status_code=400,
+        detail=f"Отправитель {email} не настроен. Добавь его в BREVO_SENDERS (Coolify) и сделай Redeploy.",
+    )
+
+
+def _build_html(text: str, unsub_url: str, sender_name: str = "") -> str:
     body = (text or "").strip()
     # если это уже HTML (из редактора) — не трогаем; иначе переносы строк → <br>
     if not ("<" in body and ">" in body):
         body = body.replace("\n", "<br>")
+    who = f"от {sender_name}" if sender_name else "от Школы арабского языка talkarabicnow.online"
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
-        'color:#092127;line-height:1.6;max-width:560px;margin:0 auto">'
+        'color:#092127;line-height:1.6;max-width:600px;margin:0 auto">'
         f"{body}"
         '<hr style="margin:28px 0 12px;border:none;border-top:1px solid #eee">'
         '<p style="font-size:12px;color:#98a2a6">'
-        "Вы получили это письмо от Школы арабского языка talkarabicnow.online. "
+        f"Вы получили это письмо {who}. "
         f'<a href="{unsub_url}" style="color:#43abd0">Отписаться</a></p></div>'
     )
+
+
+# Плейсхолдеры в письме. {{имя}} — первое слово имени подписчика; если имени
+# нет, убираем и запятую перед ним: «Добрый день, {{имя}}!» → «Добрый день!».
+_PH_NAME_RE = re.compile(r"[,\s]*\{\{\s*(имя|name)\s*\}\}", re.I)
+_PH_COMPANY_RE = re.compile(r"\{\{\s*(фирма|компания|company)\s*\}\}", re.I)
+_PH_FILE_RE = re.compile(r"\{\{\s*(презентация|файл|file)\s*\}\}", re.I)
+
+
+def _personalize(html: str, name: str, company: str, attachments: List[dict]) -> str:
+    first = (name or "").strip().split(" ")[0] if name else ""
+    html = _PH_NAME_RE.sub((", " + first) if first else "", html)
+    html = _PH_COMPANY_RE.sub(company or "", html)
+    file_url = attachments[0]["url"] if attachments else ""
+    return _PH_FILE_RE.sub(file_url, html)
 
 
 async def _send_one(
     client: httpx.AsyncClient, api_key: str, sender: dict,
     subject: str, html: str, to_email: str, to_name: str,
+    attachments: Optional[List[dict]] = None,
 ) -> tuple[int, str]:
     to = {"email": to_email}
     if to_name:
         to["name"] = to_name
+    payload = {
+        "sender": sender, "to": [to], "subject": subject, "htmlContent": html,
+        "replyTo": {"email": sender["email"], "name": sender.get("name") or sender["email"]},
+    }
+    if attachments:
+        # Brevo сам скачает файл по публичной ссылке (/uploads на нашем сервере)
+        payload["attachment"] = [{"url": a["url"], "name": a["name"]} for a in attachments]
     resp = await client.post(
         BREVO_URL,
         headers={"api-key": api_key, "content-type": "application/json",
                  "accept": "application/json"},
-        json={"sender": sender, "to": [to], "subject": subject, "htmlContent": html},
+        json=payload,
     )
     return resp.status_code, resp.text
 
@@ -148,25 +215,32 @@ def _run_reset(subject: str, total: int) -> None:
     })
 
 
-async def _send_bulk(subject: str, text: str, recipients: List[tuple]) -> None:
-    """Фоновая отправка выпуска. recipients: [(id, email, name, unsub_token)].
+async def _send_bulk(
+    subject: str, text: str, recipients: List[tuple],
+    sender: Optional[dict] = None, attachments: Optional[List[dict]] = None,
+) -> None:
+    """Фоновая отправка выпуска. recipients: [(id, email, name, company, unsub_token)].
 
     Отправленные адреса помечаются `last_campaign` пачками по 20 — если
     контейнер перезапустят на середине, повтора почти не будет.
     """
     s = get_settings()
-    sender = {"email": s.brevo_sender_email, "name": s.brevo_sender_name}
+    sender = sender or _senders()[0]
+    attachments = attachments or []
     campaign = _campaign_key(subject)
     sent = failed = 0
     pending: List[int] = []
     _run_reset(subject, len(recipients))
     async with httpx.AsyncClient(timeout=30) as client:
-        for sub_id, email, name, token in recipients:
+        for sub_id, email, name, company, token in recipients:
             unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/{token}"
             try:
                 code, body = await _send_one(
                     client, s.brevo_api_key, sender, subject,
-                    _build_html(text, unsub), email, name,
+                    _build_html(
+                        _personalize(text, name, company, attachments), unsub, sender["name"]
+                    ),
+                    email, name, attachments,
                 )
                 if code < 300:
                     sent += 1
@@ -310,6 +384,88 @@ async def upload_image(
             out["preview"] = f"{base}/uploads/{gif.name}"
         else:
             gif.unlink(missing_ok=True)
+    return out
+
+
+# ------------------------------ Вложения ------------------------------
+
+_ALLOWED_DOC = {
+    ".pdf": "application/pdf",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".zip": "application/zip",
+}
+_MAX_DOC = 10_000_000       # 10 МБ на файл
+_MAX_ATTACH_TOTAL = 10_000_000  # и на все вложения письма вместе — больше почта режет
+_SAFE_NAME_RE = re.compile(r"[^\w.\- ()А-Яа-яЁё]+")
+
+
+def _safe_filename(name: str, ext: str) -> str:
+    stem = pathlib.Path(name or "file").stem.replace("—", "-").replace("–", "-")
+    stem = " ".join(_SAFE_NAME_RE.sub("", stem).split()) or "file"
+    return stem[:80] + ext
+
+
+@router.post("/upload/file")
+async def upload_file(
+    file: UploadFile = File(...),
+    manager: Manager = Depends(require_admin),
+):
+    """Файл-вложение для письма (admin): PDF/PPTX/DOCX/XLSX/ZIP ≤ 10 МБ.
+
+    Лежит в /uploads под случайным именем; Brevo забирает его по ссылке и
+    кладёт в письмо под исходным именем (`name`)."""
+    ext = pathlib.Path(file.filename or "").suffix.lower()
+    if ext not in _ALLOWED_DOC:
+        raise HTTPException(
+            status_code=400,
+            detail="Вложение: PDF, PPTX, PPT, DOCX, XLSX или ZIP.",
+        )
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустой файл.")
+    if len(data) > _MAX_DOC:
+        raise HTTPException(
+            status_code=400,
+            detail="Файл больше 10 МБ — почта такое не пропустит. Сожми PDF или дай ссылку.",
+        )
+    s = get_settings()
+    updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
+    updir.mkdir(parents=True, exist_ok=True)
+    stored = uuid.uuid4().hex + ext
+    (updir / stored).write_bytes(data)
+    return {
+        "url": f"{s.public_api_url.rstrip('/')}/uploads/{stored}",
+        "name": _safe_filename(file.filename or "", ext),
+        "size": len(data),
+    }
+
+
+class AttachmentIn(BaseModel):
+    url: str
+    name: str
+    size: int = 0
+
+
+def _clean_attachments(items: Optional[List[AttachmentIn]]) -> List[dict]:
+    """Только наши ссылки /uploads, суммарно ≤ 10 МБ."""
+    out: List[dict] = []
+    base = get_settings().public_api_url.rstrip("/") + "/uploads/"
+    total = 0
+    for a in items or []:
+        url = (a.url or "").strip()
+        if not url.startswith(base):
+            raise HTTPException(status_code=400, detail=f"Вложение должно быть загружено через кнопку: {url}")
+        name = (a.name or "").strip() or pathlib.Path(url).name
+        total += max(0, a.size or 0)
+        out.append({"url": url, "name": name, "size": a.size or 0})
+    if total > _MAX_ATTACH_TOTAL:
+        raise HTTPException(
+            status_code=400,
+            detail="Вложения вместе больше 10 МБ — почта такое режет. Оставь одно или дай ссылку.",
+        )
     return out
 
 
@@ -647,6 +803,7 @@ async def list_subscribers(
         "groups": groups,
         "configured": bool(settings.brevo_api_key and settings.brevo_sender_email),
         "sender": settings.brevo_sender_email or None,
+        "senders": _senders(),
     }
 
 
@@ -713,6 +870,8 @@ class BroadcastRequest(BaseModel):
     group: Optional[str] = None
     test_email: Optional[str] = None
     limit: Optional[int] = None  # сколько писем отправить сейчас (партия)
+    sender_email: Optional[str] = None  # из списка /api/subscribers → senders
+    attachments: Optional[List[AttachmentIn]] = None
 
 
 def _pending_query(campaign: str, group: Optional[str]):
@@ -782,17 +941,25 @@ async def broadcast(
     if not payload.subject.strip() or not payload.text.strip():
         raise HTTPException(status_code=400, detail="Заполни тему и текст письма.")
 
-    sender = {"email": s.brevo_sender_email, "name": s.brevo_sender_name}
+    sender = _pick_sender(payload.sender_email)
+    attachments = _clean_attachments(payload.attachments)
 
     if payload.test_email:
         test_to = payload.test_email.strip().lower()
         if not _EMAIL_RE.match(test_to):
             raise HTTPException(status_code=400, detail="Неверный тестовый email.")
         unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/test"
+        # в тесте подставляем имя из базы, если адрес там есть — видно, как ляжет {{имя}}
+        me = (
+            await db.execute(select(Subscriber).where(Subscriber.email == test_to))
+        ).scalar_one_or_none()
+        html = _personalize(
+            payload.text, me.name if me else "Имя", me.company if me else "Фирма", attachments
+        )
         async with httpx.AsyncClient(timeout=30) as client:
             code, body = await _send_one(
                 client, s.brevo_api_key, sender, payload.subject,
-                _build_html(payload.text, unsub), test_to, "",
+                _build_html(html, unsub, sender["name"]), test_to, "", attachments,
             )
         if code >= 300:
             raise HTTPException(status_code=502, detail=f"Brevo вернул {code}: {body[:200]}")
@@ -831,14 +998,71 @@ async def broadcast(
             batch = batch[:left]
             trimmed = True
 
-    recipients = [(x.id, x.email, x.name, x.unsub_token) for x in batch]
+    recipients = [(x.id, x.email, x.name, x.company, x.unsub_token) for x in batch]
 
-    asyncio.create_task(_send_bulk(payload.subject, payload.text, recipients))
+    asyncio.create_task(
+        _send_bulk(payload.subject, payload.text, recipients, sender, attachments)
+    )
     return {
         "ok": True,
         "queued": len(recipients),
         "remaining": len(subs) - len(recipients),
         "trimmed_to_daily_limit": trimmed,
+    }
+
+
+class ExcludeRequest(BaseModel):
+    subject: str
+    group: Optional[str] = None
+    lines: List[str]  # email или название фирмы / имя — по одному на строку
+
+
+@router.post("/broadcast/exclude")
+async def exclude_from_broadcast(
+    payload: ExcludeRequest,
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Кому этот выпуск НЕ слать: уже написали руками, конкурент, не тот адрес.
+
+    Помечаем как «уже получил эту тему» — дальше отправка их не берёт.
+    Строка — email (точное совпадение) или кусок названия фирмы / имени
+    (без учёта регистра). Привязано к теме: сменишь тему — исключай заново."""
+    campaign = _campaign_key(payload.subject)
+    if not campaign:
+        raise HTTPException(status_code=400, detail="Сначала впиши тему письма.")
+    stmt = select(Subscriber).where(Subscriber.unsubscribed == 0)
+    if payload.group:
+        stmt = stmt.where(Subscriber.group_tag == payload.group)
+    subs = (await db.execute(stmt)).scalars().all()
+    hit: dict = {}
+    unmatched: List[str] = []
+    for raw in payload.lines:
+        line = " ".join((raw or "").split()).strip(" ,;")
+        if not line:
+            continue
+        key = line.lower()
+        if "@" in key:
+            found = [x for x in subs if x.email == key]
+        else:
+            found = [
+                x for x in subs
+                if key in (x.company or "").lower() or key in (x.name or "").lower()
+            ]
+        if not found:
+            unmatched.append(line)
+        for x in found:
+            hit[x.id] = x
+    for x in hit.values():
+        x.last_campaign = campaign
+    await db.commit()
+    return {
+        "ok": True,
+        "excluded": len(hit),
+        "matched": sorted(
+            x.email + (f" · {x.company}" if x.company else "") for x in hit.values()
+        ),
+        "unmatched": unmatched,
     }
 
 
@@ -940,6 +1164,8 @@ class ScheduleRequest(BaseModel):
     text: str
     group: Optional[str] = None
     limit: Optional[int] = None
+    sender_email: Optional[str] = None
+    attachments: Optional[List[AttachmentIn]] = None
     run_at_local: str          # «2026-08-02T08:00» — как набрано в поле
     tz: str = "Europe/Moscow"
     repeat_daily: bool = False
@@ -977,10 +1203,14 @@ async def schedule_broadcast(
     if run_at < datetime.now(timezone.utc) - timedelta(minutes=2):
         raise HTTPException(status_code=400, detail="Это время уже прошло.")
 
+    sender = _pick_sender(payload.sender_email)
+    attachments = _clean_attachments(payload.attachments)
     row = ScheduledBroadcast(
         subject=payload.subject.strip(),
         body=payload.text,
         group_tag=payload.group or "",
+        sender_email=sender["email"],
+        attachments_json=json.dumps(attachments, ensure_ascii=False),
         batch_limit=max(0, payload.limit or 0),
         repeat_daily=1 if payload.repeat_daily else 0,
         run_at=run_at.isoformat(),
@@ -1018,6 +1248,8 @@ async def list_scheduled(
                 "status": r.status,
                 "sent_total": r.sent_total,
                 "last_error": r.last_error,
+                "sender_email": r.sender_email or "",
+                "attachments": len(json.loads(r.attachments_json or "[]")),
             }
             for r in rows
         ]
@@ -1067,8 +1299,17 @@ async def run_due_broadcasts() -> int:
                 logger.info("Отложенный выпуск #%s: получателей не осталось", item.id)
                 continue
             batch = subs[: item.batch_limit] if item.batch_limit else subs
-            recipients = [(x.id, x.email, x.name, x.unsub_token) for x in batch]
-            asyncio.create_task(_send_bulk(item.subject, item.body, recipients))
+            recipients = [(x.id, x.email, x.name, x.company, x.unsub_token) for x in batch]
+            try:
+                sender = _pick_sender(item.sender_email or None)
+                attachments = json.loads(item.attachments_json or "[]")
+            except (HTTPException, ValueError) as exc:
+                item.status = "failed"
+                logger.warning("Отложенный выпуск #%s не запущен: %s", item.id, exc)
+                continue
+            asyncio.create_task(
+                _send_bulk(item.subject, item.body, recipients, sender, attachments)
+            )
             item.sent_total += len(recipients)
             started += 1
             remaining = len(subs) - len(recipients)

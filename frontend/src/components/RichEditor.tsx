@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import {
   Bold,
+  Code2,
+  FileUp,
   Heading,
   Image as ImageIcon,
   Italic,
@@ -33,7 +35,12 @@ export function RichEditor({
   const ref = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const htmlFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  // Режим «код»: готовую вёрстку письма (таблицы, стили) вставляют как HTML —
+  // визуальный редактор такое не набрать, а показать и подправить может.
+  const [htmlMode, setHtmlMode] = useState(false);
+  const [htmlDraft, setHtmlDraft] = useState("");
   const [progress, setProgress] = useState(0);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
@@ -45,6 +52,41 @@ export function RichEditor({
     ref.current?.focus();
     document.execCommand(cmd, false, arg);
     sync();
+  }
+
+  /** Взять тело письма из полного HTML-документа: <body>…</body> плюс его
+   *  <style> из <head> (там мобильные правила) — или всё как есть. */
+  function extractBody(raw: string): string {
+    const m = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (!m) return raw.trim();
+    const head = raw.slice(0, m.index ?? 0);
+    const styles = head.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? [];
+    return (styles.join("\n") + "\n" + m[1]).trim();
+  }
+
+  function setHtml(html: string) {
+    if (ref.current) ref.current.innerHTML = html;
+    setHtmlDraft(html);
+    onChange(html);
+  }
+
+  function toggleHtmlMode() {
+    if (!htmlMode) {
+      setHtmlDraft(ref.current?.innerHTML ?? "");
+      setHtmlMode(true);
+    } else {
+      setHtml(htmlDraft);
+      setHtmlMode(false);
+    }
+  }
+
+  async function onHtmlFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const html = extractBody(await f.text());
+    setHtml(html);
+    setHtmlMode(false);
   }
 
   function addLink() {
@@ -338,6 +380,21 @@ export function RichEditor({
         >
           из Кинескопа
         </button>
+        <span className="mx-1 h-5 w-px bg-line" />
+        <Btn
+          onClick={toggleHtmlMode}
+          title={htmlMode ? "Вернуться к обычному виду" : "Показать и править HTML-код письма"}
+        >
+          <Code2 size={15} />
+          <span className="text-xs">{htmlMode ? "Обычный вид" : "HTML"}</span>
+        </Btn>
+        <Btn
+          onClick={() => htmlFileRef.current?.click()}
+          title="Загрузить готовое письмо из .html-файла — вёрстка целиком"
+        >
+          <FileUp size={15} />
+          <span className="text-xs">из файла</span>
+        </Btn>
         {uploading && (
           <span className="ml-1 text-xs tabular-nums text-muted">
             {progress >= 100
@@ -361,10 +418,30 @@ export function RichEditor({
           className="hidden"
           onChange={onVideoFile}
         />
+        <input
+          ref={htmlFileRef}
+          type="file"
+          accept=".html,.htm,text/html"
+          className="hidden"
+          onChange={onHtmlFile}
+        />
       </div>
+      {htmlMode && (
+        <textarea
+          value={htmlDraft}
+          onChange={(e) => {
+            setHtmlDraft(e.target.value);
+            onChange(e.target.value);
+          }}
+          disabled={disabled}
+          spellCheck={false}
+          className="block min-h-[320px] w-full resize-y px-3 py-3 font-mono text-xs leading-relaxed text-ink focus:outline-none"
+          placeholder="<p>HTML письма…</p>"
+        />
+      )}
       <div
         ref={ref}
-        contentEditable={!disabled}
+        contentEditable={!disabled && !htmlMode}
         suppressContentEditableWarning
         onInput={sync}
         role="textbox"
@@ -372,6 +449,7 @@ export function RichEditor({
         data-placeholder="Здравствуйте! Рады сообщить, что открыт набор на новый поток…"
         className={cn(
           "email-editor min-h-[240px] px-3 py-3 text-sm leading-relaxed text-ink focus:outline-none",
+          htmlMode && "hidden",
         )}
       />
     </div>

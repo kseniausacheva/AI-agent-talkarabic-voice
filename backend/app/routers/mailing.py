@@ -143,20 +143,37 @@ def _pick_sender(email: Optional[str]) -> dict:
     )
 
 
+_FULL_TEMPLATE_RE = re.compile(r"<table[^>]*role=\"presentation\"", re.I)
+
+
 def _build_html(text: str, unsub_url: str, sender_name: str = "") -> str:
     body = (text or "").strip()
     # если это уже HTML (из редактора) — не трогаем; иначе переносы строк → <br>
     if not ("<" in body and ">" in body):
         body = body.replace("\n", "<br>")
     who = f"от {sender_name}" if sender_name else "от Школы арабского языка talkarabicnow.online"
+    footer = (
+        '<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;'
+        f'line-height:18px;color:#98a2a6">Вы получили это письмо {who}. '
+        f'<a href="{unsub_url}" style="color:#43abd0">Отписаться</a></p>'
+    )
+    if _FULL_TEMPLATE_RE.search(body):
+        # Готовая table-вёрстка (загружена из .html): у неё свои ширина и фон
+        # на всю страницу — не зажимаем, подвал отдельной строкой под ней.
+        return (
+            f"{body}"
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+            '<tr><td align="center" style="padding:14px 16px 24px 16px">'
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+            'style="width:100%;max-width:600px"><tr><td align="center">'
+            f"{footer}</td></tr></table></td></tr></table>"
+        )
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
         'color:#092127;line-height:1.6;max-width:600px;margin:0 auto">'
         f"{body}"
         '<hr style="margin:28px 0 12px;border:none;border-top:1px solid #eee">'
-        '<p style="font-size:12px;color:#98a2a6">'
-        f"Вы получили это письмо {who}. "
-        f'<a href="{unsub_url}" style="color:#43abd0">Отписаться</a></p></div>'
+        f"{footer}</div>"
     )
 
 

@@ -44,8 +44,16 @@ export function RichEditor({
   const [progress, setProgress] = useState(0);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
+  // <style> загруженного письма (мобильные правила) держим отдельно: в
+  // contentEditable он перекрасил бы всю страницу. В письмо идёт вместе с телом.
+  const stylesRef = useRef("");
+
+  function full(body: string): string {
+    return stylesRef.current ? `${stylesRef.current}\n${body}` : body;
+  }
+
   function sync() {
-    onChange(ref.current?.innerHTML ?? "");
+    onChange(full(ref.current?.innerHTML ?? ""));
   }
 
   function exec(cmd: string, arg?: string) {
@@ -64,15 +72,19 @@ export function RichEditor({
     return (styles.join("\n") + "\n" + m[1]).trim();
   }
 
+  /** Полный HTML (стили + тело) → стили в ref, тело в редактор. */
   function setHtml(html: string) {
-    if (ref.current) ref.current.innerHTML = html;
+    const styles = html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? [];
+    stylesRef.current = styles.join("\n");
+    const body = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").trim();
+    if (ref.current) ref.current.innerHTML = body;
     setHtmlDraft(html);
-    onChange(html);
+    onChange(full(body));
   }
 
   function toggleHtmlMode() {
     if (!htmlMode) {
-      setHtmlDraft(ref.current?.innerHTML ?? "");
+      setHtmlDraft(full(ref.current?.innerHTML ?? ""));
       setHtmlMode(true);
     } else {
       setHtml(htmlDraft);

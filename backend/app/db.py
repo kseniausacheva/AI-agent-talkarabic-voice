@@ -116,6 +116,9 @@ class Subscriber(Base):
     # Нужно, чтобы бить большую базу на дни и не слать одному дважды.
     last_campaign: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_sent_at: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    # «Этот выпуск (ключ темы) не слать» — исключения вручную, отдельно от
+    # last_campaign, чтобы не сбивать учёт других выпусков.
+    skip_campaign: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class ScheduledBroadcast(Base):
@@ -172,6 +175,7 @@ _SUBSCRIBER_MIGRATIONS = {
     "last_campaign": "ALTER TABLE subscribers ADD COLUMN last_campaign TEXT",
     "last_sent_at": "ALTER TABLE subscribers ADD COLUMN last_sent_at TEXT",
     "company": "ALTER TABLE subscribers ADD COLUMN company TEXT NOT NULL DEFAULT ''",
+    "skip_campaign": "ALTER TABLE subscribers ADD COLUMN skip_campaign TEXT",
 }
 _SCHEDULED_MIGRATIONS = {
     "sender_email": "ALTER TABLE scheduled_broadcasts ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''",

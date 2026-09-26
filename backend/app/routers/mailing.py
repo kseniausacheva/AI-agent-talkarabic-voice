@@ -6,6 +6,7 @@
 """
 import asyncio
 import csv
+import html as html_mod
 import io
 import json
 import logging
@@ -120,7 +121,8 @@ def _senders() -> List[dict]:
         email = m.group(2).lower()
         if any(x["email"] == email for x in out):
             continue
-        out.append({"email": email, "name": (m.group(1) or "").strip() or email})
+        name = (m.group(1) or "").strip().strip("\"'").strip()
+        out.append({"email": email, "name": name or email})
     return out
 
 
@@ -177,19 +179,39 @@ def _build_html(text: str, unsub_url: str, sender_name: str = "") -> str:
     )
 
 
-# Плейсхолдеры в письме. {{имя}} — первое слово имени подписчика; если имени
-# нет, убираем и запятую перед ним: «Добрый день, {{имя}}!» → «Добрый день!».
-_PH_NAME_RE = re.compile(r"[,\s]*\{\{\s*(имя|name)\s*\}\}", re.I)
+# Плейсхолдеры в письме. {{имя}} — первое слово имени подписчика. Если имени
+# нет, убираем и запятую/пробел перед ним: «Добрый день, {{имя}}!» → «Добрый
+# день!». Теги вокруг (жирный из редактора) сохраняем. Что стояло перед
+# плейсхолдером в шаблоне — оставляем как есть, своих запятых не добавляем.
+_PH_NAME_RE = re.compile(
+    r"((?:,|\s|&nbsp;)*)((?:<[^>]+>\s*)*)\{\{\s*(?:имя|name)\s*\}\}", re.I
+)
 _PH_COMPANY_RE = re.compile(r"\{\{\s*(фирма|компания|company)\s*\}\}", re.I)
 _PH_FILE_RE = re.compile(r"\{\{\s*(презентация|файл|file)\s*\}\}", re.I)
 
 
 def _personalize(html: str, name: str, company: str, attachments: List[dict]) -> str:
-    first = (name or "").strip().split(" ")[0] if name else ""
-    html = _PH_NAME_RE.sub((", " + first) if first else "", html)
-    html = _PH_COMPANY_RE.sub(company or "", html)
+    # Имя и фирма пришли из чужого Excel — экранируем и подставляем функцией,
+    # чтобы «\1» или «<b>» в ячейке не превратились в разметку/ссылку на группу.
+    first = html_mod.escape((name or "").strip().split(" ")[0]) if name else ""
+
+    def put_name(m: re.Match) -> str:
+        if first:
+            return m.group(1) + m.group(2) + first
+        return m.group(2)
+
+    html = _PH_NAME_RE.sub(put_name, html)
+    html = _PH_COMPANY_RE.sub(lambda m: html_mod.escape(company or ""), html)
     file_url = attachments[0]["url"] if attachments else ""
-    return _PH_FILE_RE.sub(file_url, html)
+    return _PH_FILE_RE.sub(lambda m: file_url, html)
+
+
+def _check_placeholders(text: str, attachments: List[dict]) -> None:
+    if _PH_FILE_RE.search(text or "") and not attachments:
+        raise HTTPException(
+            status_code=400,
+            detail="В письме есть {{презентация}}, но файл не прикреплён — ссылка вышла бы пустой.",
+        )
 
 
 async def _send_one(
@@ -413,7 +435,11 @@ _ALLOWED_DOC = {
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".zip": "application/zip",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
 }
+_STORED_RE = re.compile(r"[0-9a-f]{32}\.[a-z]{2,5}")
 _MAX_DOC = 10_000_000       # 10 МБ на файл
 _MAX_ATTACH_TOTAL = 10_000_000  # и на все вложения письма вместе — больше почта режет
 _SAFE_NAME_RE = re.compile(r"[^\w.\- ()А-Яа-яЁё]+")
@@ -438,7 +464,7 @@ async def upload_file(
     if ext not in _ALLOWED_DOC:
         raise HTTPException(
             status_code=400,
-            detail="Вложение: PDF, PPTX, PPT, DOCX, XLSX или ZIP.",
+            detail="Вложение: PDF, PPTX, PPT, DOCX, XLSX, ZIP, PNG или JPG.",
         )
     data = await file.read()
     if not data:
@@ -467,17 +493,28 @@ class AttachmentIn(BaseModel):
 
 
 def _clean_attachments(items: Optional[List[AttachmentIn]]) -> List[dict]:
-    """Только наши ссылки /uploads, суммарно ≤ 10 МБ."""
+    """Только файлы, загруженные к нам в /uploads; размер берём с диска, суммарно ≤ 10 МБ."""
     out: List[dict] = []
-    base = get_settings().public_api_url.rstrip("/") + "/uploads/"
+    s = get_settings()
+    base = s.public_api_url.rstrip("/") + "/uploads/"
+    updir = pathlib.Path(s.database_path).resolve().parent / "uploads"
     total = 0
     for a in items or []:
         url = (a.url or "").strip()
-        if not url.startswith(base):
-            raise HTTPException(status_code=400, detail=f"Вложение должно быть загружено через кнопку: {url}")
-        name = (a.name or "").strip() or pathlib.Path(url).name
-        total += max(0, a.size or 0)
-        out.append({"url": url, "name": name, "size": a.size or 0})
+        stored = url[len(base):] if url.startswith(base) else ""
+        path = updir / stored
+        if (
+            not _STORED_RE.fullmatch(stored)
+            or path.suffix not in _ALLOWED_DOC
+            or not path.is_file()
+        ):
+            raise HTTPException(
+                status_code=400, detail=f"Вложение должно быть загружено через кнопку: {url}"
+            )
+        size = path.stat().st_size
+        name = (a.name or "").strip() or stored
+        total += size
+        out.append({"url": url, "name": name, "size": size})
     if total > _MAX_ATTACH_TOTAL:
         raise HTTPException(
             status_code=400,
@@ -667,7 +704,7 @@ async def import_subscribers(
 
 # Заголовки колонок, по которым узнаём поля в чужой таблице (Excel/CSV).
 _COL_EMAIL = ("e-mail", "email", "mail", "почта")
-_COL_FULLNAME = ("фио", "full name", "контакт", "contact")
+_COL_FULLNAME = ("фио", "full name", "контактное лицо", "contact person", "contact name")
 _COL_SURNAME = ("surname", "last name", "lastname", "фамилия")
 _COL_FIRST = ("first name", "firstname", "name", "имя")
 _COL_COMPANY = ("company", "компания", "организация", "фирма", "organization")
@@ -707,10 +744,19 @@ def _read_table(filename: str, data: bytes) -> List[List[str]]:
     return [[c.strip() for c in r] for r in csv.reader(io.StringIO(text), dialect)]
 
 
+# Колонки-«соседи», которые содержат ключевое слово, но не то поле:
+# «Company website», «Контактный телефон», «Name of event»…
+_COL_NOT = ("site", "сайт", "phone", "телефон", "тел.", "web", "url", "адрес")
+
+
 def _find_col(header: List[str], keys: tuple, skip: set) -> Optional[int]:
-    for i, h in enumerate(header):
-        if i not in skip and any(k in h for k in keys):
-            return i
+    # сначала точное совпадение заголовка, потом — вхождение
+    for exact in (True, False):
+        for i, h in enumerate(header):
+            if i in skip or any(n in h for n in _COL_NOT):
+                continue
+            if any((h == k) if exact else (k in h) for k in keys):
+                return i
     return None
 
 
@@ -722,7 +768,10 @@ def _parse_contacts(rows: List[List[str]]) -> List[dict]:
         return []
     header = [h.lower() for h in rows[0]]
     c_email = _find_col(header, _COL_EMAIL, set())
-    has_header = c_email is not None
+    # «mail» найдётся и в самом адресе (ivan@mail.ru) — строка с адресом не заголовок
+    has_header = c_email is not None and not _EMAIL_FIND_RE.search(rows[0][c_email])
+    if not has_header:
+        c_email = None
     taken = {c_email} if has_header else set()
     c_company = _find_col(header, _COL_COMPANY, taken)
     if c_company is not None:
@@ -896,6 +945,7 @@ def _pending_query(campaign: str, group: Optional[str]):
     q = select(Subscriber).where(
         Subscriber.unsubscribed == 0,
         func.coalesce(Subscriber.last_campaign, "") != campaign,
+        func.coalesce(Subscriber.skip_campaign, "") != campaign,
     )
     if group:
         q = q.where(Subscriber.group_tag == group)
@@ -960,6 +1010,7 @@ async def broadcast(
 
     sender = _pick_sender(payload.sender_email)
     attachments = _clean_attachments(payload.attachments)
+    _check_placeholders(payload.text, attachments)
 
     if payload.test_email:
         test_to = payload.test_email.strip().lower()
@@ -1061,6 +1112,9 @@ async def exclude_from_broadcast(
         key = line.lower()
         if "@" in key:
             found = [x for x in subs if x.email == key]
+        elif len(key) < 3:
+            unmatched.append(f"{line} (слишком коротко — нужно от 3 букв)")
+            continue
         else:
             found = [
                 x for x in subs
@@ -1070,8 +1124,10 @@ async def exclude_from_broadcast(
             unmatched.append(line)
         for x in found:
             hit[x.id] = x
+    # Отдельная отметка «этот выпуск не слать»: last_campaign не трогаем,
+    # иначе адрес снова попал бы в другой, ещё идущий выпуск.
     for x in hit.values():
-        x.last_campaign = campaign
+        x.skip_campaign = campaign
     await db.commit()
     return {
         "ok": True,
@@ -1222,6 +1278,7 @@ async def schedule_broadcast(
 
     sender = _pick_sender(payload.sender_email)
     attachments = _clean_attachments(payload.attachments)
+    _check_placeholders(payload.text, attachments)
     row = ScheduledBroadcast(
         subject=payload.subject.strip(),
         body=payload.text,
@@ -1322,6 +1379,7 @@ async def run_due_broadcasts() -> int:
                 attachments = json.loads(item.attachments_json or "[]")
             except (HTTPException, ValueError) as exc:
                 item.status = "failed"
+                item.last_error = str(getattr(exc, "detail", exc))[:500]
                 logger.warning("Отложенный выпуск #%s не запущен: %s", item.id, exc)
                 continue
             asyncio.create_task(
@@ -1367,6 +1425,6 @@ async def unsubscribe(
         "<body style='font-family:Arial,sans-serif;text-align:center;padding:64px 20px;color:#092127'>"
         "<h2>Вы отписались от рассылки</h2>"
         "<p style='color:#667'>Больше писем не придёт. Спасибо, что были с нами! 🌿</p>"
-        "<p style='color:#98a2a6;font-size:13px'>Школа арабского Talkarabic</p>"
+        ""
         "</body></html>"
     )

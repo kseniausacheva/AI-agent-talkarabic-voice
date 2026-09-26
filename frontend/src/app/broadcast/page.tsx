@@ -207,7 +207,7 @@ export default function BroadcastPage() {
 
   async function excludeLines() {
     const lines = exclLines
-      .split(/\n|,|;/)
+      .split(/\n/)
       .map((l) => l.trim())
       .filter(Boolean);
     if (!lines.length) return;
@@ -500,7 +500,10 @@ export default function BroadcastPage() {
                 <span className="mb-1.5 block text-xs text-muted">Тема письма</span>
                 <input
                   value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
+                  onChange={(e) => {
+                    setSubject(e.target.value);
+                    setExclResult(null); // исключения привязаны к теме
+                  }}
                   placeholder="напр. Новый поток египетского диалекта — старт 1 августа"
                   className="h-11 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
@@ -536,7 +539,7 @@ export default function BroadcastPage() {
                     Прикрепить файл
                     <input
                       type="file"
-                      accept=".pdf,.pptx,.ppt,.docx,.xlsx,.zip"
+                      accept=".pdf,.pptx,.ppt,.docx,.xlsx,.zip,.png,.jpg,.jpeg"
                       className="hidden"
                       onChange={addAttachment}
                       disabled={attBusy || busy !== null}
@@ -580,7 +583,7 @@ export default function BroadcastPage() {
                   </ul>
                 )}
                 <p className="mt-2 text-xs text-subtle">
-                  PDF, PPTX, DOCX, XLSX или ZIP — до 10 МБ на все вложения вместе.
+                  PDF, PPTX, DOCX, XLSX, ZIP, PNG или JPG — до 10 МБ на все вложения вместе.
                   Тяжёлую презентацию лучше сжать: письмо с большим файлом чаще
                   попадает в спам и медленно открывается.
                 </p>

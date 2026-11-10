@@ -72,6 +72,11 @@ class Settings(BaseSettings):
         default="", description="Email отправителя (должен быть verified в Brevo)"
     )
     brevo_sender_name: str = Field(default="Школа арабского Talkarabic")
+    mice_sender_email: str = Field(
+        default="sale@royaleventandmice.ru",
+        description="Отправитель окна «La Royal Event · MICE» на /broadcast "
+        "(должен быть и в BREVO_SENDERS, и verified в Brevo)",
+    )
     brevo_senders: str = Field(
         default="",
         description="Дополнительные отправители через запятую: "

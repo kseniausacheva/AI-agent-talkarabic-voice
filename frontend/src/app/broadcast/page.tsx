@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowRightLeft,
   CalendarClock,
   Check,
   ChevronLeft,
@@ -29,6 +30,7 @@ import {
   apiDeleteSubscriber,
   apiExcludeFromBroadcast,
   apiImportSubscribersFile,
+  apiMoveGroup,
   apiScheduleBroadcast,
   apiScheduledList,
   apiSubscribers,
@@ -39,6 +41,7 @@ import type {
   AttachmentItem,
   BroadcastProgress,
   ExcludeResult,
+  MailBrandKey,
   BroadcastStatus,
   ScheduledBroadcast,
   SubscribersImportResult,
@@ -59,7 +62,22 @@ function fmtRunAt(iso: string): string {
   });
 }
 
+/** Окно рассылки из адреса (?brand=mice). Страница рендерится только на
+ *  клиенте (AuthGuard), поэтому читать window здесь безопасно. */
+function brandFromUrl(): MailBrandKey {
+  if (typeof window === "undefined") return "school";
+  return new URLSearchParams(window.location.search).get("brand") === "mice"
+    ? "mice"
+    : "school";
+}
+
+const BRAND_INTRO: Record<MailBrandKey, string> = {
+  school: "Письмо ученикам по базе школы. Внизу каждого письма — ссылка «Отписаться».",
+  mice: "Письмо фирмам и агентствам от La Royal Event. База, отправитель и исключения здесь свои — с учениками школы не пересекаются.",
+};
+
 export default function BroadcastPage() {
+  const [brand, setBrand] = useState<MailBrandKey>(brandFromUrl);
   const [info, setInfo] = useState<SubscribersInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState("");
@@ -104,7 +122,11 @@ export default function BroadcastPage() {
 
   // Загрузка новой базы из Excel/CSV
   const [impFile, setImpFile] = useState<File | null>(null);
-  const [impGroup, setImpGroup] = useState("MICE 2026");
+  const [impGroup, setImpGroup] = useState(() =>
+    brandFromUrl() === "mice" ? "MICE 2026" : "",
+  );
+  const [moveGroup, setMoveGroup] = useState("");
+  const [moveBusy, setMoveBusy] = useState(false);
   const [impBusy, setImpBusy] = useState(false);
   const [impResult, setImpResult] = useState<SubscribersImportResult | null>(null);
   const [impError, setImpError] = useState<string | null>(null);
@@ -113,7 +135,7 @@ export default function BroadcastPage() {
     let cancelled = false;
     (async () => {
       try {
-        const i = await apiSubscribers();
+        const i = await apiSubscribers(brand);
         if (!cancelled) setInfo(i);
       } catch (e) {
         if (!cancelled) setError((e as Error).message);
@@ -124,14 +146,40 @@ export default function BroadcastPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [brand]);
+
+  /** Переключить окно: адрес в строке браузера, своя база, свои поля. */
+  function switchBrand(next: MailBrandKey) {
+    if (next === brand) return;
+    const url = new URL(window.location.href);
+    if (next === "school") url.searchParams.delete("brand");
+    else url.searchParams.set("brand", next);
+    window.history.replaceState(null, "", url.toString());
+    setBrand(next);
+    setGroup("");
+    setSenderEmail("");
+    setStatus(null);
+    setExclResult(null);
+    setExclError(null);
+    setImpResult(null);
+    setImpError(null);
+    setImpGroup(next === "mice" ? "MICE 2026" : "");
+    setMoveGroup("");
+    setMsg(null);
+    setError(null);
+    setSubsQ("");
+    setSubsPage(1);
+  }
+
+  const currentBrand = info?.brands?.find((b) => b.key === brand) ?? null;
+  const otherBrand = info?.brands?.find((b) => b.key !== brand) ?? null;
 
   useEffect(() => {
     let cancelled = false;
     setSubsLoading(true);
     const t = window.setTimeout(async () => {
       try {
-        const list = await apiSubscribersList({ q: subsQ, page: subsPage });
+        const list = await apiSubscribersList({ q: subsQ, page: subsPage, brand });
         if (!cancelled) setSubs(list);
       } catch {
         // список необязателен — не ломаем страницу
@@ -143,18 +191,18 @@ export default function BroadcastPage() {
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [subsQ, subsPage, subsReload]);
+  }, [subsQ, subsPage, subsReload, brand]);
 
   // Ход выпуска (по теме письма) + остаток дневного лимита Brevo
   const refreshStatus = useMemo(
     () => async (subj: string, grp: string) => {
       try {
-        return await apiBroadcastStatus({ subject: subj, group: grp || null });
+        return await apiBroadcastStatus({ subject: subj, group: grp || null, brand });
       } catch {
         return null; // статус необязателен — не ломаем отправку
       }
     },
-    [],
+    [brand],
   );
 
   useEffect(() => {
@@ -205,6 +253,24 @@ export default function BroadcastPage() {
     }
   }
 
+  async function moveGroupToOther() {
+    if (!moveGroup || !otherBrand) return;
+    setMoveBusy(true);
+    setError(null);
+    try {
+      const r = await apiMoveGroup(moveGroup, otherBrand.key);
+      setMsg(`Группа «${moveGroup}» перенесена в окно «${otherBrand.name}»: ${r.moved} адресов.`);
+      setMoveGroup("");
+      if (group === moveGroup) setGroup("");
+      setInfo(await apiSubscribers(brand));
+      setSubsReload((n) => n + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setMoveBusy(false);
+    }
+  }
+
   async function excludeLines() {
     const lines = exclLines
       .split(/\n/)
@@ -215,7 +281,7 @@ export default function BroadcastPage() {
     setExclError(null);
     setExclResult(null);
     try {
-      const r = await apiExcludeFromBroadcast({ subject, group: group || null, lines });
+      const r = await apiExcludeFromBroadcast({ subject, group: group || null, brand, lines });
       setExclResult(r);
       const st = await refreshStatus(subject, group);
       if (st) setStatus(st);
@@ -232,11 +298,11 @@ export default function BroadcastPage() {
     setImpError(null);
     setImpResult(null);
     try {
-      const r = await apiImportSubscribersFile(impFile, impGroup.trim());
+      const r = await apiImportSubscribersFile(impFile, impGroup.trim(), brand);
       setImpResult(r);
       setImpFile(null);
       setGroup(r.group); // сразу выбираем новую группу для выпуска
-      setInfo(await apiSubscribers());
+      setInfo(await apiSubscribers(brand));
       setSubsReload((n) => n + 1);
     } catch (e) {
       setImpError((e as Error).message);
@@ -302,6 +368,7 @@ export default function BroadcastPage() {
         test_email: testEmail.trim(),
         sender_email: senderEmail || null,
         attachments,
+        brand,
       });
       if (r.ok) setMsg(`Тест-письмо отправлено на ${testEmail.trim()}. Проверь ящик (в т.ч. спам).`);
       else setError(r.detail ?? "Не удалось отправить тест.");
@@ -336,7 +403,7 @@ export default function BroadcastPage() {
 
   async function refreshScheduled() {
     try {
-      const { items } = await apiScheduledList();
+      const { items } = await apiScheduledList(brand);
       setScheduled(items);
     } catch {
       // список необязателен — не ломаем страницу
@@ -345,7 +412,8 @@ export default function BroadcastPage() {
 
   useEffect(() => {
     refreshScheduled();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- перечитываем при смене окна
+  }, [brand]);
 
   async function schedule() {
     setBusy("schedule");
@@ -362,6 +430,7 @@ export default function BroadcastPage() {
         repeat_daily: repeatDaily,
         sender_email: senderEmail || null,
         attachments,
+        brand,
       });
       if (r.ok) {
         setMsg(
@@ -401,6 +470,7 @@ export default function BroadcastPage() {
         limit,
         sender_email: senderEmail || null,
         attachments,
+        brand,
       });
       if (r.ok) {
         const tail =
@@ -429,12 +499,60 @@ export default function BroadcastPage() {
       <AppHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-2xl px-6 py-10 sm:py-14">
-          <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-2">
+          <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-4">
             Рассылка
           </h1>
-          <p className="text-sm text-muted mb-8">
-            Письмо ученикам по базе. Внизу каждого письма — ссылка «Отписаться».
-          </p>
+
+          {/* --- Окна: школа / MICE --- */}
+          <div
+            role="tablist"
+            aria-label="Окно рассылки"
+            className="mb-3 inline-flex rounded-xl border border-line bg-surface p-1"
+          >
+            {(
+              info?.brands ?? [
+                { key: "school" as const, name: "Школа арабского", active: null },
+                { key: "mice" as const, name: "La Royal Event · MICE", active: null },
+              ]
+            ).map((b) => {
+              const active = b.key === brand;
+              return (
+                <button
+                  key={b.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => switchBrand(b.key)}
+                  className={cnTab(active)}
+                >
+                  {b.name}
+                  {typeof b.active === "number" && (
+                    <span
+                      className={
+                        active ? "ml-1.5 text-xs text-primary" : "ml-1.5 text-xs text-subtle"
+                      }
+                    >
+                      {b.active}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-sm text-muted mb-8">{BRAND_INTRO[brand]}</p>
+
+          {currentBrand && !currentBrand.configured && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm">
+              <TriangleAlert size={18} className="mt-0.5 shrink-0 text-accent" />
+              <div>
+                <b className="text-ink">Отправитель этого окна ещё не подключён.</b>{" "}
+                Письма от <code className="text-xs">{currentBrand.sender_email ?? "—"}</code>{" "}
+                не уйдут, пока адрес не добавлен в{" "}
+                <code className="text-xs">BREVO_SENDERS</code> (Coolify, затем Redeploy) и в
+                Senders в Brevo.
+              </div>
+            </div>
+          )}
 
           {loading && (
             <div className="flex items-center gap-3 text-muted">
@@ -487,11 +605,18 @@ export default function BroadcastPage() {
                     onChange={(e) => setSenderEmail(e.target.value)}
                     className="h-11 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
                   >
-                    {info.senders!.map((snd, i) => (
-                      <option key={snd.email} value={i === 0 ? "" : snd.email}>
-                        {snd.name} · {snd.email}
-                      </option>
-                    ))}
+                    <option value="">
+                      {currentBrand?.sender_name ?? "Отправитель окна"}
+                      {currentBrand?.sender_email ? ` · ${currentBrand.sender_email}` : ""}
+                      {" — по умолчанию для этого окна"}
+                    </option>
+                    {info.senders!
+                      .filter((snd) => snd.email !== currentBrand?.sender_email)
+                      .map((snd) => (
+                        <option key={snd.email} value={snd.email}>
+                          {snd.name} · {snd.email}
+                        </option>
+                      ))}
                   </select>
                 </label>
               )}
@@ -504,7 +629,11 @@ export default function BroadcastPage() {
                     setSubject(e.target.value);
                     setExclResult(null); // исключения привязаны к теме
                   }}
-                  placeholder="напр. Новый поток египетского диалекта — старт 1 августа"
+                  placeholder={
+                    brand === "mice"
+                      ? "напр. La Royal Event — презентации после MICE4U"
+                      : "напр. Новый поток египетского диалекта — старт 1 августа"
+                  }
                   className="h-11 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </label>
@@ -861,6 +990,11 @@ export default function BroadcastPage() {
                   <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                     <span className="font-medium text-ink">
                       {progress.run.running ? "Идёт отправка" : "Последняя отправка"}
+                      {progress.run.brand && progress.run.brand !== brand && (
+                        <span className="ml-2 text-xs font-normal text-muted">
+                          окно «{info?.brands?.find((b) => b.key === progress.run.brand)?.name ?? progress.run.brand}»
+                        </span>
+                      )}
                     </span>
                     <span className="tabular-nums text-muted">
                       {progress.run.sent} из {progress.run.total}
@@ -923,6 +1057,9 @@ export default function BroadcastPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-base font-semibold text-ink">
                 База подписчиков{subs ? ` · ${subs.total}` : ""}
+                <span className="ml-2 text-sm font-normal text-muted">
+                  {currentBrand?.name}
+                </span>
               </h2>
               <label className="relative block w-full sm:w-64">
                 <Search
@@ -942,13 +1079,42 @@ export default function BroadcastPage() {
               </label>
             </div>
 
+            {otherBrand && (info?.groups.length ?? 0) > 0 && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <ArrowRightLeft size={13} className="shrink-0 text-subtle" />
+                <span>Залили группу не в то окно?</span>
+                <select
+                  value={moveGroup}
+                  onChange={(e) => setMoveGroup(e.target.value)}
+                  className="h-8 rounded-lg border border-line-strong bg-bg px-2 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="">выберите группу…</option>
+                  {info!.groups.map((g) => (
+                    <option key={g.group} value={g.group}>
+                      {g.group} ({g.count})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={moveGroupToOther}
+                  disabled={!moveGroup || moveBusy}
+                  className="btn btn-ghost btn-sm h-8 disabled:opacity-50"
+                >
+                  {moveBusy ? <Loader2 size={13} className="animate-spin" /> : null}
+                  перенести в «{otherBrand.name}»
+                </button>
+              </div>
+            )}
+
             <div className="card mb-5 p-4 sm:p-5">
               <h3 className="text-sm font-semibold text-ink">
                 Загрузить новую базу
               </h3>
               <p className="mt-1 text-xs text-muted">
-                Excel (.xlsx) или CSV. Колонки с почтой, именем и фирмой найдём
-                по заголовкам. Кто уже есть в базе — останется в своей группе.
+                Excel (.xlsx) или CSV — в окно «{currentBrand?.name ?? "…"}». Колонки с
+                почтой, именем и фирмой найдём по заголовкам. Кто уже есть в базе —
+                останется в своей группе и своём окне.
               </p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
                 <label className="block sm:w-48">
@@ -956,7 +1122,7 @@ export default function BroadcastPage() {
                   <input
                     value={impGroup}
                     onChange={(e) => setImpGroup(e.target.value)}
-                    placeholder="Например, MICE 2026"
+                    placeholder={brand === "mice" ? "Например, MICE 2026" : "Например, Поток сентябрь"}
                     className="h-10 w-full rounded-lg border border-line-strong bg-bg px-3 text-sm text-ink placeholder:text-subtle focus:outline-none focus:ring-2 focus:ring-primary/30"
                   />
                 </label>
@@ -1116,6 +1282,12 @@ export default function BroadcastPage() {
       </main>
     </AuthGuard>
   );
+}
+
+function cnTab(active: boolean) {
+  return active
+    ? "rounded-lg bg-bg px-4 py-2 text-sm font-medium text-ink shadow-sm"
+    : "rounded-lg px-4 py-2 text-sm text-muted transition-colors hover:text-ink";
 }
 
 function cnBar(running: boolean) {

@@ -45,6 +45,7 @@ import type {
   SubscribersImportResult,
   AttachmentItem,
   ExcludeResult,
+  MailBrandKey,
   SubscribersListResponse,
 } from "./types";
 
@@ -430,17 +431,43 @@ export async function apiImportClients(
 /* ----------------------- Email-рассылка ----------------------- */
 
 /** Сводка по базе рассылки (admin). */
-export async function apiSubscribers(): Promise<SubscribersInfo> {
+const MOCK_BRANDS = [
+  {
+    key: "school" as const,
+    name: "Школа арабского",
+    sender_email: "info@talkarabicnow.online",
+    sender_name: "Школа арабского Talkarabic",
+    configured: true,
+    active: 126,
+  },
+  {
+    key: "mice" as const,
+    name: "La Royal Event · MICE",
+    sender_email: "sale@royaleventandmice.ru",
+    sender_name: "La Royal Event",
+    configured: true,
+    active: 184,
+  },
+];
+
+export async function apiSubscribers(
+  brand: MailBrandKey = "school",
+): Promise<SubscribersInfo> {
   if (USE_MOCK) {
     await wait(300);
+    const school = brand === "school";
     return {
-      total: 128,
-      unsubscribed: 2,
-      groups: [
-        { group: "Египетский диалект", count: 106 },
-        { group: "Халиджи", count: 14 },
-        { group: "Курс 2 (Египетский)", count: 8 },
-      ],
+      brand,
+      brands: MOCK_BRANDS,
+      total: school ? 128 : 186,
+      unsubscribed: school ? 2 : 2,
+      groups: school
+        ? [
+            { group: "Египетский диалект", count: 106 },
+            { group: "Халиджи", count: 14 },
+            { group: "Курс 2 (Египетский)", count: 8 },
+          ]
+        : [{ group: "MICE 2026", count: 184 }],
       configured: true,
       sender: "info@talkarabicnow.online",
       senders: [
@@ -449,7 +476,24 @@ export async function apiSubscribers(): Promise<SubscribersInfo> {
       ],
     };
   }
-  const res = await request("/api/subscribers");
+  const res = await request(`/api/subscribers?brand=${brand}`);
+  return res.json();
+}
+
+/** Перенести группу целиком в другое окно. */
+export async function apiMoveGroup(
+  group: string,
+  brand: MailBrandKey,
+): Promise<{ ok: boolean; moved: number }> {
+  if (USE_MOCK) {
+    await wait(300);
+    return { ok: true, moved: 8 };
+  }
+  const res = await request("/api/subscribers/move-group", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ group, brand }),
+  });
   return res.json();
 }
 
@@ -457,6 +501,7 @@ export async function apiSubscribers(): Promise<SubscribersInfo> {
 export async function apiBroadcastStatus(opts: {
   subject: string;
   group?: string | null;
+  brand?: MailBrandKey;
 }): Promise<BroadcastStatus> {
   if (USE_MOCK) {
     await wait(200);
@@ -471,6 +516,7 @@ export async function apiBroadcastStatus(opts: {
   }
   const params = new URLSearchParams({ subject: opts.subject });
   if (opts.group) params.set("group", opts.group);
+  if (opts.brand) params.set("brand", opts.brand);
   const res = await request(`/api/broadcast/status?${params.toString()}`);
   return res.json();
 }
@@ -484,6 +530,7 @@ export async function apiBroadcast(payload: {
   limit?: number | null;
   sender_email?: string | null;
   attachments?: AttachmentItem[];
+  brand?: MailBrandKey;
 }): Promise<BroadcastResult> {
   if (USE_MOCK) {
     await wait(700);
@@ -504,18 +551,27 @@ export async function apiSubscribersList(opts: {
   q?: string;
   group?: string;
   page?: number;
+  brand?: MailBrandKey;
 }): Promise<SubscribersListResponse> {
-  const { q = "", group = "", page = 1 } = opts;
+  const { q = "", group = "", page = 1, brand = "school" } = opts;
   if (USE_MOCK) {
     await wait(300);
-    const groups = ["Египетский диалект", "Халиджи", "Курс 2 (Египетский)"];
-    const all: SubscriberRow[] = Array.from({ length: 128 }, (_, i) => ({
-      id: i + 1,
-      email: `client${i + 1}@example.com`,
-      name: "",
-      group: groups[i % 3],
-      unsubscribed: i % 40 === 0,
-    }));
+    const groups =
+      brand === "mice"
+        ? ["MICE 2026"]
+        : ["Египетский диалект", "Халиджи", "Курс 2 (Египетский)"];
+    const all: SubscriberRow[] = Array.from(
+      { length: brand === "mice" ? 186 : 128 },
+      (_, i) => ({
+        id: i + 1,
+        email:
+          brand === "mice" ? `manager${i + 1}@agency${i % 9}.ru` : `client${i + 1}@example.com`,
+        name: brand === "mice" ? "Екатерина Путилина" : "",
+        company: brand === "mice" ? `Агентство ${i % 9}` : "",
+        group: groups[i % groups.length],
+        unsubscribed: i % 40 === 0,
+      }),
+    );
     const filtered = all.filter(
       (s) =>
         (!group || s.group === group) &&
@@ -529,7 +585,7 @@ export async function apiSubscribersList(opts: {
       per_page: per,
     };
   }
-  const params = new URLSearchParams({ page: String(page), per_page: "30" });
+  const params = new URLSearchParams({ page: String(page), per_page: "30", brand });
   if (q.trim()) params.set("q", q.trim());
   if (group) params.set("group", group);
   const res = await request(`/api/subscribers/list?${params.toString()}`);
@@ -594,6 +650,7 @@ export async function apiScheduleBroadcast(payload: {
   repeat_daily: boolean;
   sender_email?: string | null;
   attachments?: AttachmentItem[];
+  brand?: MailBrandKey;
 }): Promise<{ ok: boolean; id?: number; run_at?: string; detail?: string }> {
   if (USE_MOCK) {
     await wait(400);
@@ -608,9 +665,12 @@ export async function apiScheduleBroadcast(payload: {
 }
 
 /** Что стоит в очереди на отправку. */
-export async function apiScheduledList(): Promise<{ items: ScheduledBroadcast[] }> {
+export async function apiScheduledList(
+  brand: MailBrandKey = "school",
+): Promise<{ items: ScheduledBroadcast[] }> {
   if (USE_MOCK) {
     await wait(250);
+    if (brand === "mice") return { items: [] };
     return {
       items: [
         {
@@ -628,7 +688,7 @@ export async function apiScheduledList(): Promise<{ items: ScheduledBroadcast[] 
       ],
     };
   }
-  const res = await request("/api/broadcast/scheduled");
+  const res = await request(`/api/broadcast/scheduled?brand=${brand}`);
   return res.json();
 }
 
@@ -718,14 +778,16 @@ export function apiUploadMediaProgress(
 export async function apiImportSubscribersFile(
   file: File,
   group: string,
+  brand: MailBrandKey = "school",
 ): Promise<SubscribersImportResult> {
   if (USE_MOCK) {
     await wait(600);
-    return { ok: true, group, found: 186, added: 183, already: 3, in_group: 183 };
+    return { ok: true, group, brand, found: 186, added: 183, already: 3, in_group: 183 };
   }
   const form = new FormData();
   form.append("file", file);
   form.append("group", group);
+  form.append("brand", brand);
   const res = await request("/api/subscribers/import-file", {
     method: "POST",
     body: form,
@@ -749,6 +811,7 @@ export async function apiUploadFile(file: File): Promise<AttachmentItem> {
 export async function apiExcludeFromBroadcast(payload: {
   subject: string;
   group?: string | null;
+  brand?: MailBrandKey;
   lines: string[];
 }): Promise<ExcludeResult> {
   if (USE_MOCK) {

@@ -320,9 +320,25 @@ export type SubscribersInfo = {
   sender: string | null;
   /** Кем можно подписать письмо (основной + BREVO_SENDERS). */
   senders?: Sender[];
+  /** Текущее окно и все окна с их счётчиками. */
+  brand?: MailBrandKey;
+  brands?: MailBrand[];
 };
 
 export type Sender = { email: string; name: string };
+
+/** Окно рассылки: ученики школы или фирмы (La Royal Event · MICE). */
+export type MailBrandKey = "school" | "mice";
+export type MailBrand = {
+  key: MailBrandKey;
+  name: string;
+  sender_email: string | null;
+  sender_name: string | null;
+  /** отправитель окна есть среди Brevo-отправителей */
+  configured: boolean;
+  /** активных подписчиков в окне */
+  active: number;
+};
 
 /** Файл-вложение письма (POST /api/upload/file). */
 export type AttachmentItem = { url: string; name: string; size: number };
@@ -349,6 +365,7 @@ export type SubscriberRow = {
 export type SubscribersImportResult = {
   ok: boolean;
   group: string;
+  brand?: MailBrandKey;
   found: number;
   added: number;
   already: number;
@@ -377,6 +394,7 @@ export type BroadcastResult = {
 export type BroadcastProgress = {
   run: {
     subject: string;
+    brand?: string;
     total: number;
     sent: number;
     failed: number;
@@ -412,6 +430,7 @@ export type ScheduledBroadcast = {
   last_error: string | null;
   sender_email?: string;
   attachments?: number;
+  brand?: MailBrandKey;
 };
 
 /** Ход выпуска и дневной лимит Brevo (GET /api/broadcast/status). */

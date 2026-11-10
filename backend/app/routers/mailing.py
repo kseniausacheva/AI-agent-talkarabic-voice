@@ -126,6 +126,52 @@ def _senders() -> List[dict]:
     return out
 
 
+# Окна рассылки. У каждого свои подписчики (subscribers.brand), отправитель по
+# умолчанию и подпись в подвале. Школа — основной отправитель из env, MICE —
+# MICE_SENDER_EMAIL (должен быть в BREVO_SENDERS и verified в Brevo).
+BRAND_KEYS = ("school", "mice")
+
+
+def _brands() -> List[dict]:
+    s = get_settings()
+    senders = {x["email"]: x for x in _senders()}
+    out = []
+    for key, name, email in (
+        ("school", "Школа арабского", (s.brevo_sender_email or "").lower()),
+        ("mice", "La Royal Event · MICE", (s.mice_sender_email or "").lower()),
+    ):
+        snd = senders.get(email)
+        out.append({
+            "key": key,
+            "name": name,
+            "sender_email": email or None,
+            "sender_name": snd["name"] if snd else None,
+            # отправитель окна есть в списке Brevo-отправителей
+            "configured": bool(snd),
+        })
+    return out
+
+
+def _brand_key(value: Optional[str]) -> str:
+    """Ключ окна из запроса; пусто → school (старые клиенты ничего не передают)."""
+    key = (value or "school").strip().lower()
+    if key not in BRAND_KEYS:
+        raise HTTPException(status_code=400, detail=f"Неизвестное окно рассылки: {value}")
+    return key
+
+
+def _brand_sender(brand: str) -> dict:
+    """Отправитель окна по умолчанию; если его нет в BREVO_SENDERS — понятная ошибка."""
+    b = next(x for x in _brands() if x["key"] == brand)
+    if not b["configured"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Для окна «{b['name']}» не настроен отправитель {b['sender_email'] or ''}: "
+            "добавь его в BREVO_SENDERS (Coolify) и в Senders в Brevo, затем Redeploy.",
+        )
+    return _pick_sender(b["sender_email"])
+
+
 def _pick_sender(email: Optional[str]) -> dict:
     """Отправитель по email из списка; пусто → основной. Чужой адрес — 400."""
     senders = _senders()
@@ -241,14 +287,14 @@ async def _send_one(
 # Ход текущей отправки. В памяти, а не в базе: если контейнер перезапустят,
 # отправка всё равно прервётся — хранить её след негде и незачем.
 _run_state: dict = {
-    "campaign": "", "subject": "", "total": 0, "sent": 0, "failed": 0,
+    "campaign": "", "subject": "", "brand": "", "total": 0, "sent": 0, "failed": 0,
     "running": False, "started_at": "", "finished_at": "", "errors": [],
 }
 
 
-def _run_reset(subject: str, total: int) -> None:
+def _run_reset(subject: str, total: int, brand: str = "") -> None:
     _run_state.update({
-        "campaign": _campaign_key(subject), "subject": subject, "total": total,
+        "campaign": _campaign_key(subject), "subject": subject, "brand": brand, "total": total,
         "sent": 0, "failed": 0, "running": True,
         "started_at": _now(), "finished_at": "", "errors": [],
     })
@@ -257,6 +303,7 @@ def _run_reset(subject: str, total: int) -> None:
 async def _send_bulk(
     subject: str, text: str, recipients: List[tuple],
     sender: Optional[dict] = None, attachments: Optional[List[dict]] = None,
+    brand: str = "",
 ) -> None:
     """Фоновая отправка выпуска. recipients: [(id, email, name, company, unsub_token)].
 
@@ -269,7 +316,7 @@ async def _send_bulk(
     campaign = _campaign_key(subject)
     sent = failed = 0
     pending: List[int] = []
-    _run_reset(subject, len(recipients))
+    _run_reset(subject, len(recipients), brand)
     async with httpx.AsyncClient(timeout=30) as client:
         for sub_id, email, name, company, token in recipients:
             unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/{token}"
@@ -654,10 +701,12 @@ class SubscriberIn(BaseModel):
 
 class ImportSubsRequest(BaseModel):
     items: List[SubscriberIn]
+    brand: Optional[str] = None
 
 
 async def _upsert_subscriber(
     db: AsyncSession, email: str, name: str, group: str, company: str = "",
+    brand: str = "school",
 ) -> Optional[str]:
     """Добавить адрес или дополнить пустые поля. → "added" / "updated" / None.
 
@@ -679,7 +728,7 @@ async def _upsert_subscriber(
         return "updated"
     db.add(Subscriber(
         email=email, name=name or "", group_tag=group or "", company=company or "",
-        unsubscribed=0, unsub_token=uuid.uuid4().hex, created_at=_now(),
+        brand=brand, unsubscribed=0, unsub_token=uuid.uuid4().hex, created_at=_now(),
     ))
     await db.flush()  # чтобы повтор адреса в том же файле нашёлся select'ом
     return "added"
@@ -692,9 +741,10 @@ async def import_subscribers(
     db: AsyncSession = Depends(get_db_session),
 ):
     """Массовое добавление подписчиков (admin). Дедуп по email."""
+    brand = _brand_key(payload.brand)
     added = updated = 0
     for it in payload.items:
-        res = await _upsert_subscriber(db, it.email, it.name, it.group)
+        res = await _upsert_subscriber(db, it.email, it.name, it.group, brand=brand)
         added += res == "added"
         updated += res == "updated"
     await db.commit()
@@ -807,11 +857,13 @@ def _parse_contacts(rows: List[List[str]]) -> List[dict]:
 async def import_subscribers_file(
     file: UploadFile = File(...),
     group: str = Form(...),
+    brand: str = Form(default="school"),
     manager: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Загрузить базу из Excel/CSV в группу (admin). Колонки узнаём по
+    """Загрузить базу из Excel/CSV в группу окна (admin). Колонки узнаём по
     заголовкам (E-mail, Name, Surname, Company…), дедуп по email."""
+    brand = _brand_key(brand)
     group = " ".join((group or "").split())
     if not group:
         raise HTTPException(status_code=400, detail="Укажите название группы.")
@@ -825,45 +877,71 @@ async def import_subscribers_file(
         raise HTTPException(status_code=400, detail="В файле не нашлось ни одного email.")
     added = updated = 0
     for c in contacts:
-        res = await _upsert_subscriber(db, c["email"], c["name"], group, c["company"])
+        res = await _upsert_subscriber(
+            db, c["email"], c["name"], group, c["company"], brand=brand
+        )
         added += res == "added"
         updated += res == "updated"
     await db.commit()
     in_group = (
         await db.execute(
             select(func.count()).select_from(Subscriber)
-            .where(Subscriber.group_tag == group, Subscriber.unsubscribed == 0)
+            .where(
+                Subscriber.group_tag == group,
+                Subscriber.brand == brand,
+                Subscriber.unsubscribed == 0,
+            )
         )
     ).scalar_one()
     return {
-        "ok": True, "group": group, "found": len(contacts),
+        "ok": True, "group": group, "brand": brand, "found": len(contacts),
         "added": added, "already": updated, "in_group": in_group,
     }
 
 
 @router.get("/subscribers")
 async def list_subscribers(
+    brand: str = Query(default="school"),
     manager: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Сводка по базе рассылки: всего, отписалось, по группам (активные)."""
-    total = (await db.execute(select(func.count()).select_from(Subscriber))).scalar_one()
+    """Сводка по базе окна: всего, отписалось, по группам (активные) + список окон."""
+    brand = _brand_key(brand)
+    total = (
+        await db.execute(
+            select(func.count()).select_from(Subscriber).where(Subscriber.brand == brand)
+        )
+    ).scalar_one()
     unsub = (
         await db.execute(
-            select(func.count()).select_from(Subscriber).where(Subscriber.unsubscribed == 1)
+            select(func.count()).select_from(Subscriber)
+            .where(Subscriber.brand == brand, Subscriber.unsubscribed == 1)
         )
     ).scalar_one()
     rows = (
         await db.execute(
             select(Subscriber.group_tag, func.count())
-            .where(Subscriber.unsubscribed == 0)
+            .where(Subscriber.brand == brand, Subscriber.unsubscribed == 0)
             .group_by(Subscriber.group_tag)
         )
     ).all()
     groups = [{"group": g or "Без группы", "count": c} for g, c in rows]
     groups.sort(key=lambda x: x["count"], reverse=True)
+    # сколько активных в каждом окне — для вкладок
+    per_brand = dict(
+        (
+            await db.execute(
+                select(Subscriber.brand, func.count())
+                .where(Subscriber.unsubscribed == 0)
+                .group_by(Subscriber.brand)
+            )
+        ).all()
+    )
+    brands = [{**b, "active": per_brand.get(b["key"], 0)} for b in _brands()]
     settings = get_settings()
     return {
+        "brand": brand,
+        "brands": brands,
         "total": total,
         "unsubscribed": unsub,
         "groups": groups,
@@ -877,13 +955,14 @@ async def list_subscribers(
 async def subscribers_list(
     q: str = Query(default=""),
     group: str = Query(default=""),
+    brand: str = Query(default="school"),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=30, ge=1, le=200),
     manager: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Постраничный список подписчиков (admin): email, имя, группа, статус."""
-    stmt = select(Subscriber)
+    """Постраничный список подписчиков окна (admin): email, имя, группа, статус."""
+    stmt = select(Subscriber).where(Subscriber.brand == _brand_key(brand))
     if group:
         stmt = stmt.where(Subscriber.group_tag == group)
     rows = (
@@ -914,6 +993,31 @@ async def subscribers_list(
     return {"items": items, "total": total, "page": page, "per_page": per_page}
 
 
+class MoveGroupRequest(BaseModel):
+    group: str
+    brand: str  # куда
+
+
+@router.post("/subscribers/move-group")
+async def move_group(
+    payload: MoveGroupRequest,
+    manager: Manager = Depends(require_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Перенести группу целиком в другое окно (если залили не туда)."""
+    brand = _brand_key(payload.brand)
+    group = " ".join((payload.group or "").split())
+    if not group:
+        raise HTTPException(status_code=400, detail="Укажите группу.")
+    res = await db.execute(
+        update(Subscriber)
+        .where(Subscriber.group_tag == group, Subscriber.brand != brand)
+        .values(brand=brand)
+    )
+    await db.commit()
+    return {"ok": True, "moved": res.rowcount or 0, "group": group, "brand": brand}
+
+
 @router.delete("/subscribers/{sub_id}")
 async def delete_subscriber(
     sub_id: int = Path(...),
@@ -938,11 +1042,13 @@ class BroadcastRequest(BaseModel):
     limit: Optional[int] = None  # сколько писем отправить сейчас (партия)
     sender_email: Optional[str] = None  # из списка /api/subscribers → senders
     attachments: Optional[List[AttachmentIn]] = None
+    brand: Optional[str] = None  # окно: school | mice (пусто = school)
 
 
-def _pending_query(campaign: str, group: Optional[str]):
-    """Активные подписчики группы, которым этот выпуск ещё НЕ уходил."""
+def _pending_query(campaign: str, group: Optional[str], brand: str = "school"):
+    """Активные подписчики окна (и группы), которым этот выпуск ещё НЕ уходил."""
     q = select(Subscriber).where(
+        Subscriber.brand == brand,
         Subscriber.unsubscribed == 0,
         func.coalesce(Subscriber.last_campaign, "") != campaign,
         func.coalesce(Subscriber.skip_campaign, "") != campaign,
@@ -956,6 +1062,7 @@ def _pending_query(campaign: str, group: Optional[str]):
 async def broadcast_status(
     subject: str = Query(default=""),
     group: str = Query(default=""),
+    brand: str = Query(default="school"),
     manager: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
@@ -963,10 +1070,11 @@ async def broadcast_status(
 
     Выпуск опознаётся по теме письма: поменяешь тему — счётчик начнётся заново.
     """
+    brand = _brand_key(brand)
     campaign = _campaign_key(subject)
     grp = group or None
     total_q = select(func.count()).select_from(Subscriber).where(
-        Subscriber.unsubscribed == 0
+        Subscriber.brand == brand, Subscriber.unsubscribed == 0
     )
     if grp:
         total_q = total_q.where(Subscriber.group_tag == grp)
@@ -975,7 +1083,7 @@ async def broadcast_status(
     pending = 0
     if campaign:
         pending = len(
-            (await db.execute(_pending_query(campaign, grp))).scalars().all()
+            (await db.execute(_pending_query(campaign, grp, brand))).scalars().all()
         )
     else:
         pending = group_total
@@ -1008,7 +1116,8 @@ async def broadcast(
     if not payload.subject.strip() or not payload.text.strip():
         raise HTTPException(status_code=400, detail="Заполни тему и текст письма.")
 
-    sender = _pick_sender(payload.sender_email)
+    brand = _brand_key(payload.brand)
+    sender = _pick_sender(payload.sender_email) if payload.sender_email else _brand_sender(brand)
     attachments = _clean_attachments(payload.attachments)
     _check_placeholders(payload.text, attachments)
 
@@ -1035,7 +1144,7 @@ async def broadcast(
 
     campaign = _campaign_key(payload.subject)
     subs = (
-        await db.execute(_pending_query(campaign, payload.group or None))
+        await db.execute(_pending_query(campaign, payload.group or None, brand))
     ).scalars().all()
     if not subs:
         raise HTTPException(
@@ -1069,7 +1178,7 @@ async def broadcast(
     recipients = [(x.id, x.email, x.name, x.company, x.unsub_token) for x in batch]
 
     asyncio.create_task(
-        _send_bulk(payload.subject, payload.text, recipients, sender, attachments)
+        _send_bulk(payload.subject, payload.text, recipients, sender, attachments, brand)
     )
     return {
         "ok": True,
@@ -1082,6 +1191,7 @@ async def broadcast(
 class ExcludeRequest(BaseModel):
     subject: str
     group: Optional[str] = None
+    brand: Optional[str] = None
     lines: List[str]  # email или название фирмы / имя — по одному на строку
 
 
@@ -1099,7 +1209,9 @@ async def exclude_from_broadcast(
     campaign = _campaign_key(payload.subject)
     if not campaign:
         raise HTTPException(status_code=400, detail="Сначала впиши тему письма.")
-    stmt = select(Subscriber).where(Subscriber.unsubscribed == 0)
+    stmt = select(Subscriber).where(
+        Subscriber.brand == _brand_key(payload.brand), Subscriber.unsubscribed == 0
+    )
     if payload.group:
         stmt = stmt.where(Subscriber.group_tag == payload.group)
     subs = (await db.execute(stmt)).scalars().all()
@@ -1239,6 +1351,7 @@ class ScheduleRequest(BaseModel):
     limit: Optional[int] = None
     sender_email: Optional[str] = None
     attachments: Optional[List[AttachmentIn]] = None
+    brand: Optional[str] = None
     run_at_local: str          # «2026-08-02T08:00» — как набрано в поле
     tz: str = "Europe/Moscow"
     repeat_daily: bool = False
@@ -1276,13 +1389,15 @@ async def schedule_broadcast(
     if run_at < datetime.now(timezone.utc) - timedelta(minutes=2):
         raise HTTPException(status_code=400, detail="Это время уже прошло.")
 
-    sender = _pick_sender(payload.sender_email)
+    brand = _brand_key(payload.brand)
+    sender = _pick_sender(payload.sender_email) if payload.sender_email else _brand_sender(brand)
     attachments = _clean_attachments(payload.attachments)
     _check_placeholders(payload.text, attachments)
     row = ScheduledBroadcast(
         subject=payload.subject.strip(),
         body=payload.text,
         group_tag=payload.group or "",
+        brand=brand,
         sender_email=sender["email"],
         attachments_json=json.dumps(attachments, ensure_ascii=False),
         batch_limit=max(0, payload.limit or 0),
@@ -1300,13 +1415,17 @@ async def schedule_broadcast(
 
 @router.get("/broadcast/scheduled")
 async def list_scheduled(
+    brand: str = Query(default="school"),
     manager: Manager = Depends(require_admin),
     db: AsyncSession = Depends(get_db_session),
 ):
-    """Что стоит в очереди и что уже отработало (последние 20)."""
+    """Что стоит в очереди окна и что уже отработало (последние 20)."""
     rows = (
         await db.execute(
-            select(ScheduledBroadcast).order_by(ScheduledBroadcast.run_at.desc()).limit(20)
+            select(ScheduledBroadcast)
+            .where(ScheduledBroadcast.brand == _brand_key(brand))
+            .order_by(ScheduledBroadcast.run_at.desc())
+            .limit(20)
         )
     ).scalars().all()
     return {
@@ -1324,6 +1443,7 @@ async def list_scheduled(
                 "last_error": r.last_error,
                 "sender_email": r.sender_email or "",
                 "attachments": len(json.loads(r.attachments_json or "[]")),
+                "brand": r.brand or "school",
             }
             for r in rows
         ]
@@ -1366,7 +1486,9 @@ async def run_due_broadcasts() -> int:
         for item in due:
             campaign = _campaign_key(item.subject)
             subs = (
-                await db.execute(_pending_query(campaign, item.group_tag or None))
+                await db.execute(
+                    _pending_query(campaign, item.group_tag or None, item.brand or "school")
+                )
             ).scalars().all()
             if not subs:
                 item.status = "done"
@@ -1383,7 +1505,10 @@ async def run_due_broadcasts() -> int:
                 logger.warning("Отложенный выпуск #%s не запущен: %s", item.id, exc)
                 continue
             asyncio.create_task(
-                _send_bulk(item.subject, item.body, recipients, sender, attachments)
+                _send_bulk(
+                    item.subject, item.body, recipients, sender, attachments,
+                    item.brand or "school",
+                )
             )
             item.sent_total += len(recipients)
             started += 1

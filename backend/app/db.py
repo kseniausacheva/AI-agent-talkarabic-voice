@@ -107,6 +107,11 @@ class Subscriber(Base):
     )
     # Фирма контакта — для деловых баз (MICE и т.п.), у учеников пусто.
     company: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # Окно рассылки: school (ученики школы) | mice (фирмы, La Royal Event).
+    # У каждого окна свои база, отправитель и статистика — письма не путаются.
+    brand: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="school", server_default="school"
+    )
     unsubscribed: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -144,6 +149,9 @@ class ScheduledBroadcast(Base):
     tz_label: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    brand: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="school", server_default="school"
+    )
     # От кого (email из списка отправителей; пусто = основной) и вложения
     sender_email: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     attachments_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]", server_default="[]")
@@ -176,10 +184,17 @@ _SUBSCRIBER_MIGRATIONS = {
     "last_sent_at": "ALTER TABLE subscribers ADD COLUMN last_sent_at TEXT",
     "company": "ALTER TABLE subscribers ADD COLUMN company TEXT NOT NULL DEFAULT ''",
     "skip_campaign": "ALTER TABLE subscribers ADD COLUMN skip_campaign TEXT",
+    "brand": "ALTER TABLE subscribers ADD COLUMN brand TEXT NOT NULL DEFAULT 'school'",
+}
+# Что сделать сразу после добавления колонки (один раз): группы MICE,
+# залитые до появления окон, переезжают в окно mice.
+_AFTER_ADD_COLUMN = {
+    ("subscribers", "brand"): "UPDATE subscribers SET brand='mice' WHERE lower(group_tag) LIKE 'mice%'",
 }
 _SCHEDULED_MIGRATIONS = {
     "sender_email": "ALTER TABLE scheduled_broadcasts ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''",
     "attachments_json": "ALTER TABLE scheduled_broadcasts ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'",
+    "brand": "ALTER TABLE scheduled_broadcasts ADD COLUMN brand TEXT NOT NULL DEFAULT 'school'",
 }
 
 
@@ -231,6 +246,10 @@ async def init_db() -> None:
                 if column not in existing_columns:
                     await conn.exec_driver_sql(ddl)
                     logger.info("Migration: added column %s.%s", table, column)
+                    follow_up = _AFTER_ADD_COLUMN.get((table, column))
+                    if follow_up:
+                        await conn.exec_driver_sql(follow_up)
+                        logger.info("Migration: data fix for %s.%s", table, column)
     logger.info("Database ready: %s", db_path)
 
 

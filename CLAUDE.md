@@ -249,6 +249,19 @@
     - *Редактор:* кнопка «HTML» (textarea с кодом письма) и «из файла» (.html —
       берётся `<body>` + `<style>` из `<head>`). Так вставляется готовая
       table-вёрстка, которую WYSIWYG не набрать.
+  - **Два окна рассылки: Школа арабского и La Royal Event · MICE** (2026-11-10).
+    Колонка `subscribers.brand` / `scheduled_broadcasts.brand` (`school`|`mice`,
+    авто-миграция; группы «MICE…» при миграции уезжают в `mice`). Все запросы
+    рассылки принимают `brand` (query/form/body), без него = `school` (старый
+    фронт работает). У окна свой отправитель по умолчанию: школа —
+    `BREVO_SENDER_EMAIL`, MICE — env `MICE_SENDER_EMAIL` (дефолт
+    `sale@royaleventandmice.ru`; должен быть в `BREVO_SENDERS` и verified в Brevo),
+    иначе 400 с подсказкой. `POST /api/subscribers/move-group {group, brand}` —
+    перенести группу в другое окно. На `/broadcast` — вкладки, окно в адресе
+    `?brand=mice` (`history.replaceState`, читается в lazy `useState`: страница
+    рендерится только на клиенте за `AuthGuard`). Исключения и `last_campaign`
+    привязаны к теме письма, а не к окну: одна и та же тема в двух окнах —
+    считается одним выпуском.
   - **Telegram-рассылка НЕ в нашем туле:** клиентский бот школы — в **BotHelp**
     (636 подписчиков), рассылки делаются штатно в BotHelp (там встроено). Бот может
     писать только тем, кто сам ему написал — поэтому наш тул это не дублирует.

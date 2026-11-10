@@ -351,7 +351,11 @@ export default function BroadcastPage() {
       .replace(/<[^>]*>/g, "")
       .replace(/&nbsp;/g, " ")
       .trim().length > 0;
-  const canSend = subject.trim() && hasBody && !busy;
+  // Сервер ещё не знает про окна (Vercel обновился, Coolify — нет): в окне MICE
+  // старый сервер разослал бы письмо всей базе, поэтому отправку закрываем.
+  const serverHasBrands = !!info?.brands;
+  const brandBlocked = !!info && !serverHasBrands && brand !== "school";
+  const canSend = subject.trim() && hasBody && !busy && !brandBlocked;
 
   async function sendTest() {
     if (!testEmail.trim()) {
@@ -540,6 +544,18 @@ export default function BroadcastPage() {
             })}
           </div>
           <p className="text-sm text-muted mb-8">{BRAND_INTRO[brand]}</p>
+
+          {brandBlocked && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm">
+              <TriangleAlert size={18} className="mt-0.5 shrink-0 text-danger" />
+              <div>
+                <b className="text-ink">Сервер ещё не обновлён — это окно пока закрыто.</b>{" "}
+                Нажми Redeploy в Coolify для <code className="text-xs">api.talkarabicnow.online</code>{" "}
+                и обнови страницу. Иначе письмо из этого окна ушло бы всей базе,
+                включая учеников школы.
+              </div>
+            </div>
+          )}
 
           {currentBrand && !currentBrand.configured && (
             <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm">
@@ -735,7 +751,7 @@ export default function BroadcastPage() {
                   <button
                     type="button"
                     onClick={excludeLines}
-                    disabled={!subject.trim() || !exclLines.trim() || exclBusy}
+                    disabled={!subject.trim() || !exclLines.trim() || exclBusy || brandBlocked}
                     className="btn btn-secondary btn-sm h-9 disabled:opacity-50"
                   >
                     {exclBusy ? (
@@ -1143,7 +1159,7 @@ export default function BroadcastPage() {
                 <button
                   type="button"
                   onClick={importFile}
-                  disabled={!impFile || !impGroup.trim() || impBusy}
+                  disabled={!impFile || !impGroup.trim() || impBusy || brandBlocked}
                   className="btn btn-secondary h-10 shrink-0"
                 >
                   {impBusy ? (

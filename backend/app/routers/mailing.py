@@ -252,12 +252,30 @@ def _personalize(html: str, name: str, company: str, attachments: List[dict]) ->
     return _PH_FILE_RE.sub(lambda m: file_url, html)
 
 
-def _check_placeholders(text: str, attachments: List[dict]) -> None:
+_PH_ANY_RE = re.compile(r"\{\{\s*([^{}]{1,40}?)\s*\}\}")
+_PH_KNOWN = {"имя", "name", "фирма", "компания", "company", "презентация", "файл", "file"}
+
+
+def _check_placeholders(text: str, attachments: List[dict], strict: bool = False) -> None:
     if _PH_FILE_RE.search(text or "") and not attachments:
         raise HTTPException(
             status_code=400,
             detail="В письме есть {{презентация}}, но файл не прикреплён — ссылка вышла бы пустой.",
         )
+    if strict:
+        # {{оплата_…}}, {{дата_…}} и т.п. сервер не подставляет — их заполняют
+        # руками. Незаполненное место в рассылке = битая кнопка у всей базы.
+        left = sorted({
+            m.group(1) for m in _PH_ANY_RE.finditer(text or "")
+            if m.group(1).strip().lower() not in _PH_KNOWN
+        })
+        if left:
+            raise HTTPException(
+                status_code=400,
+                detail="В письме остались незаполненные места: "
+                + ", ".join("{{" + x + "}}" for x in left)
+                + ". Замени их на ссылки/даты и отправь ещё раз (тест-письмо можно и так).",
+            )
 
 
 async def _send_one(
@@ -1175,6 +1193,7 @@ async def broadcast(
             raise HTTPException(status_code=502, detail=f"Brevo вернул {code}: {body[:200]}")
         return {"ok": True, "test": True, "sent": 1}
 
+    _check_placeholders(payload.text, attachments, strict=True)
     campaign = _campaign_key(payload.subject)
     subs = (
         await db.execute(_pending_query(campaign, payload.group or None, brand))
@@ -1435,7 +1454,7 @@ async def schedule_broadcast(
     brand = _brand_key(payload.brand)
     sender = _pick_sender(payload.sender_email) if payload.sender_email else _brand_sender(brand)
     attachments = _clean_attachments(payload.attachments)
-    _check_placeholders(payload.text, attachments)
+    _check_placeholders(payload.text, attachments, strict=True)
     row = ScheduledBroadcast(
         subject=payload.subject.strip(),
         body=payload.text,

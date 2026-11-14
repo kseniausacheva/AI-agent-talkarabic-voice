@@ -314,9 +314,20 @@ async def _send_bulk(
     sender = sender or _senders()[0]
     attachments = attachments or []
     campaign = _campaign_key(subject)
+    _run_reset(subject, len(recipients), brand)
+    # running снимаем в любом случае — иначе одна упавшая отправка заблокирует все
+    try:
+        await _send_loop(s, sender, attachments, subject, text, recipients, campaign)
+    finally:
+        _run_state.update({"running": False, "finished_at": _now()})
+
+
+async def _send_loop(
+    s, sender: dict, attachments: List[dict], subject: str, text: str,
+    recipients: List[tuple], campaign: str,
+) -> None:
     sent = failed = 0
     pending: List[int] = []
-    _run_reset(subject, len(recipients), brand)
     async with httpx.AsyncClient(timeout=30) as client:
         for sub_id, email, name, company, token in recipients:
             unsub = f"{s.public_api_url.rstrip('/')}/api/unsubscribe/{token}"
@@ -345,8 +356,7 @@ async def _send_bulk(
                 pending = []
             await asyncio.sleep(0.2)  # мягкий rate-limit
     await _mark_sent(pending, campaign)
-    _run_state.update({"running": False, "finished_at": _now(),
-                       "sent": sent, "failed": failed})
+    _run_state.update({"sent": sent, "failed": failed})
     logger.info(
         "Выпуск «%s» разослан: отправлено=%d, ошибок=%d", subject[:60], sent, failed
     )
@@ -704,14 +714,28 @@ class ImportSubsRequest(BaseModel):
     brand: Optional[str] = None
 
 
+UNGROUPED_LABEL = "Без группы"
+
+
+def _group_clause(group: Optional[str]):
+    """Условие по группе: пусто/None → без фильтра, «Без группы» → пустой тег."""
+    if not group:
+        return None
+    if group == UNGROUPED_LABEL:
+        return Subscriber.group_tag == ""
+    return Subscriber.group_tag == group
+
+
 async def _upsert_subscriber(
     db: AsyncSession, email: str, name: str, group: str, company: str = "",
     brand: str = "school",
 ) -> Optional[str]:
-    """Добавить адрес или дополнить пустые поля. → "added" / "updated" / None.
+    """Добавить адрес или дополнить пустые поля.
+    → "added" / "updated" / "other_brand" / None.
 
     Группу у уже существующего адреса не перезаписываем: если человек уже
-    в базе (например, ученик), он остаётся в своей группе."""
+    в базе (например, ученик), он остаётся в своей группе. Адрес из другого
+    окна не трогаем вовсе — иначе у ученика появилась бы группа фирм."""
     email = (email or "").strip().lower()
     if not _EMAIL_RE.match(email):
         return None
@@ -719,6 +743,8 @@ async def _upsert_subscriber(
         await db.execute(select(Subscriber).where(Subscriber.email == email))
     ).scalar_one_or_none()
     if row:
+        if (row.brand or "school") != brand:
+            return "other_brand"
         if group and not row.group_tag:
             row.group_tag = group
         if name and not row.name:
@@ -742,14 +768,15 @@ async def import_subscribers(
 ):
     """Массовое добавление подписчиков (admin). Дедуп по email."""
     brand = _brand_key(payload.brand)
-    added = updated = 0
+    added = updated = other = 0
     for it in payload.items:
         res = await _upsert_subscriber(db, it.email, it.name, it.group, brand=brand)
         added += res == "added"
         updated += res == "updated"
+        other += res == "other_brand"
     await db.commit()
     total = (await db.execute(select(func.count()).select_from(Subscriber))).scalar_one()
-    return {"ok": True, "added": added, "updated": updated, "total": total}
+    return {"ok": True, "added": added, "updated": updated, "in_other_brand": other, "total": total}
 
 
 # Заголовки колонок, по которым узнаём поля в чужой таблице (Excel/CSV).
@@ -875,13 +902,14 @@ async def import_subscribers_file(
     contacts = _parse_contacts(_read_table(file.filename or "", data))
     if not contacts:
         raise HTTPException(status_code=400, detail="В файле не нашлось ни одного email.")
-    added = updated = 0
+    added = updated = other = 0
     for c in contacts:
         res = await _upsert_subscriber(
             db, c["email"], c["name"], group, c["company"], brand=brand
         )
         added += res == "added"
         updated += res == "updated"
+        other += res == "other_brand"
     await db.commit()
     in_group = (
         await db.execute(
@@ -896,6 +924,8 @@ async def import_subscribers_file(
     return {
         "ok": True, "group": group, "brand": brand, "found": len(contacts),
         "added": added, "already": updated, "in_group": in_group,
+        # адреса, которые уже живут в другом окне — письмо отсюда им не уйдёт
+        "in_other_brand": other,
     }
 
 
@@ -963,8 +993,9 @@ async def subscribers_list(
 ):
     """Постраничный список подписчиков окна (admin): email, имя, группа, статус."""
     stmt = select(Subscriber).where(Subscriber.brand == _brand_key(brand))
-    if group:
-        stmt = stmt.where(Subscriber.group_tag == group)
+    clause = _group_clause(group)
+    if clause is not None:
+        stmt = stmt.where(clause)
     rows = (
         await db.execute(stmt.order_by(Subscriber.group_tag, Subscriber.email))
     ).scalars().all()
@@ -1011,7 +1042,7 @@ async def move_group(
         raise HTTPException(status_code=400, detail="Укажите группу.")
     res = await db.execute(
         update(Subscriber)
-        .where(Subscriber.group_tag == group, Subscriber.brand != brand)
+        .where(_group_clause(group), Subscriber.brand != brand)
         .values(brand=brand)
     )
     await db.commit()
@@ -1053,8 +1084,9 @@ def _pending_query(campaign: str, group: Optional[str], brand: str = "school"):
         func.coalesce(Subscriber.last_campaign, "") != campaign,
         func.coalesce(Subscriber.skip_campaign, "") != campaign,
     )
-    if group:
-        q = q.where(Subscriber.group_tag == group)
+    clause = _group_clause(group)
+    if clause is not None:
+        q = q.where(clause)
     return q.order_by(Subscriber.id)
 
 
@@ -1076,8 +1108,9 @@ async def broadcast_status(
     total_q = select(func.count()).select_from(Subscriber).where(
         Subscriber.brand == brand, Subscriber.unsubscribed == 0
     )
-    if grp:
-        total_q = total_q.where(Subscriber.group_tag == grp)
+    clause = _group_clause(grp)
+    if clause is not None:
+        total_q = total_q.where(clause)
     group_total = (await db.execute(total_q)).scalar_one()
 
     pending = 0
@@ -1152,6 +1185,14 @@ async def broadcast(
             detail="Этот выпуск уже ушёл всем в группе. Смени тему письма или выбери другую группу.",
         )
 
+    if _run_state.get("running"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Сейчас идёт отправка «{_run_state.get('subject', '')[:60]}» "
+            f"({_run_state.get('sent', 0)} из {_run_state.get('total', 0)}). "
+            "Дождись, пока она закончится, и нажми ещё раз.",
+        )
+
     batch = subs
     if payload.limit and payload.limit > 0:
         batch = subs[: payload.limit]
@@ -1212,8 +1253,9 @@ async def exclude_from_broadcast(
     stmt = select(Subscriber).where(
         Subscriber.brand == _brand_key(payload.brand), Subscriber.unsubscribed == 0
     )
-    if payload.group:
-        stmt = stmt.where(Subscriber.group_tag == payload.group)
+    clause = _group_clause(payload.group)
+    if clause is not None:
+        stmt = stmt.where(clause)
     subs = (await db.execute(stmt)).scalars().all()
     hit: dict = {}
     unmatched: List[str] = []
@@ -1285,6 +1327,7 @@ async def broadcast_progress(manager: Manager = Depends(require_admin)):
     return {
         "run": {
             "subject": _run_state["subject"],
+            "brand": _run_state.get("brand", ""),
             "total": _run_state["total"],
             "sent": _run_state["sent"],
             "failed": _run_state["failed"],
@@ -1484,6 +1527,10 @@ async def run_due_broadcasts() -> int:
             )
         ).scalars().all()
         for item in due:
+            if _run_state.get("running"):
+                # одна отправка за раз: этот выпуск возьмём на следующем тике
+                logger.info("Отложенный выпуск #%s ждёт: идёт другая отправка", item.id)
+                continue
             campaign = _campaign_key(item.subject)
             subs = (
                 await db.execute(

@@ -190,6 +190,9 @@ _SUBSCRIBER_MIGRATIONS = {
 # залитые до появления окон, переезжают в окно mice.
 _AFTER_ADD_COLUMN = {
     ("subscribers", "brand"): "UPDATE subscribers SET brand='mice' WHERE lower(group_tag) LIKE 'mice%'",
+    # и отложенные выпуски по тем же группам — иначе планировщик закроет их
+    # с нулём получателей (подписчики уже уехали в окно mice)
+    ("scheduled_broadcasts", "brand"): "UPDATE scheduled_broadcasts SET brand='mice' WHERE lower(group_tag) LIKE 'mice%'",
 }
 _SCHEDULED_MIGRATIONS = {
     "sender_email": "ALTER TABLE scheduled_broadcasts ADD COLUMN sender_email TEXT NOT NULL DEFAULT ''",

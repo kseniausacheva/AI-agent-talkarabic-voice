@@ -370,6 +370,8 @@ export type SubscribersImportResult = {
   added: number;
   already: number;
   in_group: number;
+  /** адреса, которые уже живут в другом окне */
+  in_other_brand?: number;
 };
 
 /** Постраничный список подписчиков (GET /api/subscribers/list). */

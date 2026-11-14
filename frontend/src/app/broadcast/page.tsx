@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightLeft,
   CalendarClock,
@@ -71,6 +71,18 @@ function brandFromUrl(): MailBrandKey {
     : "school";
 }
 
+/** Черновик письма одного окна — чтобы при переключении письмо школы
+ *  не уехало фирмам, а при возврате не пропало. */
+type Draft = {
+  subject: string;
+  text: string;
+  attachments: AttachmentItem[];
+  testEmail: string;
+  exclLines: string;
+  batch: string;
+  batchTouched: boolean;
+};
+
 const BRAND_INTRO: Record<MailBrandKey, string> = {
   school: "Письмо ученикам по базе школы. Внизу каждого письма — ссылка «Отписаться».",
   mice: "Письмо фирмам и агентствам от La Royal Event. База, отправитель и исключения здесь свои — с учениками школы не пересекаются.",
@@ -78,6 +90,9 @@ const BRAND_INTRO: Record<MailBrandKey, string> = {
 
 export default function BroadcastPage() {
   const [brand, setBrand] = useState<MailBrandKey>(brandFromUrl);
+  // Какое окно открыто прямо сейчас — для ответов, прилетевших после переключения
+  const brandRef = useRef<MailBrandKey>(brandFromUrl());
+  const draftsRef = useRef<Partial<Record<MailBrandKey, Draft>>>({});
   const [info, setInfo] = useState<SubscribersInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState("");
@@ -148,13 +163,26 @@ export default function BroadcastPage() {
     };
   }, [brand]);
 
-  /** Переключить окно: адрес в строке браузера, своя база, свои поля. */
+  /** Переключить окно: адрес в строке браузера, своя база, свой черновик письма. */
   function switchBrand(next: MailBrandKey) {
     if (next === brand) return;
     const url = new URL(window.location.href);
     if (next === "school") url.searchParams.delete("brand");
     else url.searchParams.set("brand", next);
     window.history.replaceState(null, "", url.toString());
+    // черновик текущего окна — в карман, черновик нового — на стол
+    draftsRef.current[brand] = {
+      subject, text, attachments, testEmail, exclLines, batch, batchTouched,
+    };
+    const d = draftsRef.current[next];
+    setSubject(d?.subject ?? "");
+    setText(d?.text ?? "");
+    setAttachments(d?.attachments ?? []);
+    setTestEmail(d?.testEmail ?? "");
+    setExclLines(d?.exclLines ?? "");
+    setBatch(d?.batch ?? "");
+    setBatchTouched(d?.batchTouched ?? false);
+    brandRef.current = next;
     setBrand(next);
     setGroup("");
     setSenderEmail("");
@@ -163,6 +191,7 @@ export default function BroadcastPage() {
     setExclError(null);
     setImpResult(null);
     setImpError(null);
+    setImpFile(null);
     setImpGroup(next === "mice" ? "MICE 2026" : "");
     setMoveGroup("");
     setMsg(null);
@@ -259,11 +288,19 @@ export default function BroadcastPage() {
     setError(null);
     try {
       const r = await apiMoveGroup(moveGroup, otherBrand.key);
-      setMsg(`Группа «${moveGroup}» перенесена в окно «${otherBrand.name}»: ${r.moved} адресов.`);
+      if (r.moved > 0) {
+        setMsg(`Группа «${moveGroup}» перенесена в окно «${otherBrand.name}»: ${r.moved} адресов.`);
+      } else {
+        setError(`В группе «${moveGroup}» переносить нечего — 0 адресов.`);
+      }
       setMoveGroup("");
+      setImpFile(null);
       if (group === moveGroup) setGroup("");
-      setInfo(await apiSubscribers(brand));
-      setSubsReload((n) => n + 1);
+      const fresh = await apiSubscribers(brand);
+      if (brandRef.current === brand) {
+        setInfo(fresh);
+        setSubsReload((n) => n + 1);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -299,10 +336,12 @@ export default function BroadcastPage() {
     setImpResult(null);
     try {
       const r = await apiImportSubscribersFile(impFile, impGroup.trim(), brand);
+      const fresh = await apiSubscribers(brand);
+      if (brandRef.current !== brand) return; // окно уже переключили
       setImpResult(r);
       setImpFile(null);
       setGroup(r.group); // сразу выбираем новую группу для выпуска
-      setInfo(await apiSubscribers(brand));
+      setInfo(fresh);
       setSubsReload((n) => n + 1);
     } catch (e) {
       setImpError((e as Error).message);
@@ -406,9 +445,10 @@ export default function BroadcastPage() {
   }, []);
 
   async function refreshScheduled() {
+    const asked = brand;
     try {
-      const { items } = await apiScheduledList(brand);
-      setScheduled(items);
+      const { items } = await apiScheduledList(asked);
+      if (brandRef.current === asked) setScheduled(items);
     } catch {
       // список необязателен — не ломаем страницу
     }
@@ -485,9 +525,10 @@ export default function BroadcastPage() {
           `Отправка запущена: ${r.queued} писем${group ? ` (группа «${group}»)` : ""}.${tail}`,
         );
         // счётчики подтянутся, когда фон отработает — обновим через паузу
+        const asked = brand;
         window.setTimeout(async () => {
           const st = await refreshStatus(subject, group);
-          if (st) setStatus(st);
+          if (st && brandRef.current === asked) setStatus(st);
         }, 4000);
       } else setError(r.detail ?? "Не удалось запустить рассылку.");
     } catch (e) {
@@ -656,7 +697,12 @@ export default function BroadcastPage() {
 
               <div className="mb-5">
                 <span className="mb-1.5 block text-xs text-muted">Текст письма</span>
-                <RichEditor onChange={setText} disabled={busy !== null} />
+                <RichEditor
+                  key={brand}
+                  initialHtml={text}
+                  onChange={setText}
+                  disabled={busy !== null}
+                />
                 <span className="mt-1.5 block text-xs text-subtle">
                   Выделяй жирным/курсивом, добавляй заголовки, списки, ссылки и
                   картинки. Ссылка «Отписаться» добавится автоматически.
@@ -1176,6 +1222,8 @@ export default function BroadcastPage() {
                   Добавлено {impResult.added} новых адресов в «{impResult.group}»
                   {impResult.already > 0 &&
                     ` · ${impResult.already} уже были в базе или повторялись в файле`}
+                  {(impResult.in_other_brand ?? 0) > 0 &&
+                    ` · ${impResult.in_other_brand} уже есть в окне «${otherBrand?.name ?? "другом"}» — письмо отсюда им не уйдёт`}
                   . В группе сейчас {impResult.in_group}. Группа выбрана для
                   выпуска выше.
                 </p>

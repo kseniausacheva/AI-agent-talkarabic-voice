@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   Bold,
   Code2,
@@ -25,14 +25,34 @@ import { cn } from "@/lib/cn";
  * жирный / курсив / заголовок / список / ссылка / картинка (загрузка или URL).
  * Неуправляемый: начальное значение ставится один раз, дальше — onChange(html).
  */
+/** Разделить HTML письма на <style>-блоки и тело. */
+function splitStyles(html: string): { styles: string; body: string } {
+  const styles = (html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? []).join("\n");
+  const body = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").trim();
+  return { styles, body };
+}
+
 export function RichEditor({
   onChange,
   disabled,
+  initialHtml = "",
 }: {
   onChange: (html: string) => void;
   disabled?: boolean;
+  /** Начальное содержимое (черновик окна) — ставится один раз при монтировании. */
+  initialHtml?: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  // Черновик разбираем один раз при монтировании (key сверху пересоздаёт редактор)
+  const [initial] = useState(() => splitStyles(initialHtml));
+  // Как только div появился — кладём в него черновик (без setState, без эффекта).
+  const attachRoot = useCallback(
+    (el: HTMLDivElement | null) => {
+      ref.current = el;
+      if (el && initial.body && !el.innerHTML) el.innerHTML = initial.body;
+    },
+    [initial.body],
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
   const htmlFileRef = useRef<HTMLInputElement>(null);
@@ -40,13 +60,13 @@ export function RichEditor({
   // Режим «код»: готовую вёрстку письма (таблицы, стили) вставляют как HTML —
   // визуальный редактор такое не набрать, а показать и подправить может.
   const [htmlMode, setHtmlMode] = useState(false);
-  const [htmlDraft, setHtmlDraft] = useState("");
+  const [htmlDraft, setHtmlDraft] = useState(initialHtml);
   const [progress, setProgress] = useState(0);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
   // <style> загруженного письма (мобильные правила) держим отдельно: в
   // contentEditable он перекрасил бы всю страницу. В письмо идёт вместе с телом.
-  const stylesRef = useRef("");
+  const stylesRef = useRef(initial.styles);
 
   function full(body: string): string {
     return stylesRef.current ? `${stylesRef.current}\n${body}` : body;
@@ -74,9 +94,8 @@ export function RichEditor({
 
   /** Полный HTML (стили + тело) → стили в ref, тело в редактор. */
   function setHtml(html: string) {
-    const styles = html.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? [];
-    stylesRef.current = styles.join("\n");
-    const body = html.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "").trim();
+    const { styles, body } = splitStyles(html);
+    stylesRef.current = styles;
     if (ref.current) ref.current.innerHTML = body;
     setHtmlDraft(html);
     onChange(full(body));
@@ -452,7 +471,7 @@ export function RichEditor({
         />
       )}
       <div
-        ref={ref}
+        ref={attachRoot}
         contentEditable={!disabled && !htmlMode}
         suppressContentEditableWarning
         onInput={sync}

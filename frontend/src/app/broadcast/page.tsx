@@ -618,6 +618,41 @@ export default function BroadcastPage() {
             </div>
           )}
 
+          {!loading && !info && (
+            <div
+              role="alert"
+              className="mb-6 flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm"
+            >
+              <TriangleAlert size={18} className="mt-0.5 shrink-0 text-danger" />
+              <div>
+                {isNetworkError(error) ? (
+                  <>
+                    <b className="text-ink">Сервер рассылки не отвечает.</b> Если вы
+                    только что нажали Redeploy в Coolify — он перезапускается 10–15
+                    минут, подождите и обновите страницу. Если не помогло — проверьте в
+                    Coolify, что приложение{" "}
+                    <code className="text-xs">api.talkarabicnow.online</code> запущено
+                    (статус Running).
+                  </>
+                ) : (
+                  <>
+                    <b className="text-ink">Не удалось загрузить базу рассылки.</b>{" "}
+                    {error ?? "Попробуйте обновить страницу."}
+                  </>
+                )}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="btn btn-secondary btn-sm h-9"
+                  >
+                    Обновить страницу
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {info && !info.configured && (
             <div className="mb-6 flex items-start gap-3 rounded-xl border border-accent/30 bg-accent/5 p-4 text-sm">
               <TriangleAlert size={18} className="mt-0.5 shrink-0 text-accent" />
@@ -1346,6 +1381,12 @@ export default function BroadcastPage() {
       </main>
     </AuthGuard>
   );
+}
+
+/** fetch без ответа сервера: в Chrome «Failed to fetch», в Safari «Load failed». */
+function isNetworkError(message: string | null): boolean {
+  if (!message) return false;
+  return /failed to fetch|load failed|networkerror|network request failed/i.test(message);
 }
 
 function cnTab(active: boolean) {

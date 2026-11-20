@@ -34,6 +34,12 @@ STATUSES = ("new", "reviewing", "approved", "declined", "paused")
 # character. Keep a bounded envelope that fits all declared profile fields.
 BODY_LIMIT = 131_072
 DEMO_ID = "demo-royal-partner-review"
+APPLICATION_CONSENT_TEXT = (
+    "I consent to LA ROYAL EVENT for Commercial Chains LLC processing the business "
+    "contact details and professional information I provide to review my partner "
+    "application and contact me about possible cooperation, as explained in the "
+    "Privacy Notice."
+)
 _EMAIL = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _requests: OrderedDict[str, deque] = OrderedDict()
 
@@ -250,6 +256,7 @@ async def partner_config(response: Response):
         "agreementVersion": None,
         "privacyNoticeVersion": settings.partner_privacy_notice_version,
         "marketingConsentVersion": settings.partner_marketing_consent_version,
+        "applicationConsentText": APPLICATION_CONSENT_TEXT,
     }
 
 
@@ -265,12 +272,20 @@ async def apply_partner(request: Request, response: Response, db: AsyncSession =
     now = _now()
     row_id = uuid.uuid4().hex
     fingerprint = hashlib.sha256((payload.email + "\0" + payload.company_name.casefold()).encode()).hexdigest()
+    profile = payload.model_dump(by_alias=True)
+    profile["applicationConsent"] = {
+        "given": payload.privacy_acknowledged,
+        "text": APPLICATION_CONSENT_TEXT,
+        "version": settings.partner_privacy_notice_version,
+        "recordedAt": now,
+        "privacyNoticeVersion": settings.partner_privacy_notice_version,
+    }
     row = Partner(
         id=row_id, reference="RE-P-" + row_id[:12].upper(), fingerprint=fingerprint,
         company_name=payload.company_name, legal_name=payload.legal_name,
         contact_name=payload.contact_name, email=payload.email,
         country=payload.country, city=payload.city, partner_type=payload.partner_type,
-        status="new", profile_json=payload.model_dump_json(by_alias=True),
+        status="new", profile_json=json.dumps(profile, ensure_ascii=False),
         assigned_to="", next_follow_up=None,
         privacy_notice_version=settings.partner_privacy_notice_version,
         privacy_acknowledged_at=now, marketing_opt_in=int(payload.marketing_opt_in),

@@ -4,7 +4,9 @@ Uses isolated temporary SQLite and FastAPI router only: never sends email,
 touches production data, starts Whisper or runs the mailing scheduler.
 """
 import os
+import json
 import unittest
+from datetime import datetime
 
 os.environ.setdefault("OPENROUTER_API_KEY", "test-not-a-live-key")
 os.environ.setdefault("AUTH_SECRET", "partner-tests-only-not-a-production-secret")
@@ -18,7 +20,7 @@ from sqlalchemy.pool import StaticPool
 from app.config import get_settings
 from app.db import Base, Manager, Subscriber, get_session
 from app.models.partner import Partner, PartnerAcceptance, PartnerEvent
-from app.routers.partners import BODY_LIMIT, _csv_safe, _requests, router
+from app.routers.partners import APPLICATION_CONSENT_TEXT, BODY_LIMIT, _csv_safe, _requests, router
 from app.services.auth import create_token
 
 
@@ -54,6 +56,7 @@ class PartnerApiTests(unittest.IsolatedAsyncioTestCase):
         self.settings = get_settings()
         self.old_intake = self.settings.partner_intake_enabled
         self.old_origins = self.settings.allowed_origins
+        self.old_privacy_version = self.settings.partner_privacy_notice_version
         self.settings.partner_intake_enabled = True
         self.settings.allowed_origins = ORIGIN
         _requests.clear()
@@ -71,6 +74,7 @@ class PartnerApiTests(unittest.IsolatedAsyncioTestCase):
         await self.engine.dispose()
         self.settings.partner_intake_enabled = self.old_intake
         self.settings.allowed_origins = self.old_origins
+        self.settings.partner_privacy_notice_version = self.old_privacy_version
 
     async def apply(self, extra=None):
         return await self.client.post("/api/partners", headers={"Origin": ORIGIN}, json={**APPLICATION, **(extra or {})})
@@ -114,6 +118,28 @@ class PartnerApiTests(unittest.IsolatedAsyncioTestCase):
             "insurance": "م" * 1500,
         })
         self.assertEqual(result.status_code, 201, result.text)
+
+    async def test_application_consent_evidence_is_derived_on_the_server(self):
+        version = "partner-privacy-test-v1"
+        self.settings.partner_privacy_notice_version = version
+        forged = await self.apply({"applicationConsent": {"given": True, "recordedAt": "2000-01-01", "text": "Forged"}})
+        self.assertEqual(forged.status_code, 422)
+        config = (await self.client.get("/api/partners/config")).json()
+        self.assertEqual(config["applicationConsentText"], APPLICATION_CONSENT_TEXT)
+        self.assertEqual(config["privacyNoticeVersion"], version)
+        created = await self.apply()
+        self.assertEqual(created.status_code, 201, created.text)
+        async with self.factory() as session:
+            row = await session.get(Partner, created.json()["id"])
+            evidence = json.loads(row.profile_json)["applicationConsent"]
+            self.assertTrue(evidence["given"])
+            self.assertEqual(evidence["text"], APPLICATION_CONSENT_TEXT)
+            self.assertEqual(evidence["version"], version)
+            self.assertEqual(evidence["privacyNoticeVersion"], version)
+            self.assertEqual(evidence["recordedAt"], row.created_at)
+            self.assertIsNotNone(datetime.fromisoformat(evidence["recordedAt"]).tzinfo)
+            self.assertEqual(row.marketing_opt_in, 0)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(Subscriber)), 0)
 
     async def test_status_followup_and_notes_have_server_audit(self):
         created = await self.apply({"marketingOptIn": True})

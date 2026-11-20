@@ -231,6 +231,10 @@ async def init_db() -> None:
     (checklists) и добавляем отсутствующие колонки через ALTER TABLE.
     Существующие записи остаются с NULL в новых колонках.
     """
+    # Register additive partner tables before create_all. Importing here avoids a
+    # Base/model circular import and leaves existing newsletter tables untouched.
+    from app.models import partner as _partner_models  # noqa: F401
+
     db_path = Path(get_settings().database_path)
     if str(db_path.parent) not in ("", "."):
         db_path.parent.mkdir(parents=True, exist_ok=True)

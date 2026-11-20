@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ArrowRightLeft,
   CalendarClock,
@@ -547,6 +548,7 @@ export default function BroadcastPage() {
           <h1 className="font-display text-balance text-[clamp(1.75rem,1.5rem+1.2vw,2.25rem)] leading-tight text-ink mb-4">
             Рассылка
           </h1>
+          {brand === "mice" && <Link href="/partners" className="btn btn-secondary mb-5">Партнёры MICE</Link>}
 
           {/* --- Окна: школа / MICE --- */}
           <div

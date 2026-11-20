@@ -23,6 +23,7 @@ from app.routers import (
     knowledge,
     leads,
     mailing,
+    partners,
     session,
 )
 from app.routers.mailing import run_due_broadcasts
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(knowledge.router)
     app.include_router(mailing.router)
     app.include_router(leads.router)
+    app.include_router(partners.router)
 
     # Статика: загруженные картинки для писем (публично, для email-клиентов)
     updir = uploads_dir()

@@ -92,6 +92,14 @@ class Settings(BaseSettings):
         "(пусто = только публичные и прямые ссылки на файл)",
     )
 
+    # Partner onboarding uses its own records, never auto-subscribes to email.
+    partner_intake_enabled: bool = Field(default=False)
+    partner_privacy_notice_version: str = Field(default="draft-2026-11-20")
+    partner_marketing_consent_version: str = Field(default="marketing-v1")
+    # Intentionally disabled until a final agreement and verified email workflow
+    # are deployed. A form checkbox alone is not verified assent evidence.
+    partner_acceptance_enabled: bool = Field(default=False)
+
     # CORS
     allowed_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000"

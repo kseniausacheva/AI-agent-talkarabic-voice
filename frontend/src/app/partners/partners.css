@@ -1,6 +1,6 @@
 /* Scoped La Royal Event theme. Source: royal-event-ru/src/index.css and
    ContactForm.tsx, commit b4718e7ae4dab820d6a9429948abfab15b9c9cba.
-   The shared school navigation and all other routes keep their own styles. */
+   School navigation and all other routes keep their own styles. */
 @font-face {
   font-family: "Royal Partners Manrope";
   font-style: normal;
@@ -57,7 +57,7 @@
   --font-sans: "Royal Partners Manrope", system-ui, sans-serif;
   --font-display: "Royal Partners Unbounded", system-ui, sans-serif;
   color-scheme: dark;
-  min-height: calc(100vh - 4rem);
+  min-height: 100vh;
   background: #0c0814;
   color: #f0eae0;
   font-family: var(--font-sans);

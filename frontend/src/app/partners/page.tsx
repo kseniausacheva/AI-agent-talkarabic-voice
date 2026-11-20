@@ -2,9 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Search, Users, X } from "lucide-react";
-import { AppHeader } from "@/components/AppHeader";
+import { ChevronLeft, ChevronRight, Download, Loader2, LogOut, RefreshCw, Search, Users, X } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
+import { clearToken } from "@/lib/auth";
 import "./partners.css";
 import {
   PARTNER_STATUSES, exportPartners, fetchPartner, fetchPartnerConfig, fetchPartners, updatePartner,
@@ -48,7 +48,7 @@ function StatusBadge({ status }: { status: PartnerStatus }) {
 }
 
 export default function PartnersPage() {
-  return <AuthGuard><AppHeader /><PartnersRegister /></AuthGuard>;
+  return <AuthGuard><PartnersRegister /></AuthGuard>;
 }
 
 function PartnersRegister() {
@@ -109,6 +109,7 @@ function PartnersRegister() {
             <button type="button" className="btn btn-secondary" onClick={download} disabled={exporting || loading || !!error || !result?.total}>
               {exporting ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />} CSV
             </button>
+            <button type="button" className="btn btn-secondary" onClick={() => { clearToken(); window.location.replace("/login"); }}><LogOut size={17} />Выйти</button>
           </div>
         </div>
 

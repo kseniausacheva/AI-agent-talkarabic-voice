@@ -1,0 +1,154 @@
+/* Scoped La Royal Event theme. Source: royal-event-ru/src/index.css and
+   ContactForm.tsx, commit b4718e7ae4dab820d6a9429948abfab15b9c9cba.
+   The shared school navigation and all other routes keep their own styles. */
+@font-face {
+  font-family: "Royal Partners Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/partners-brand/fonts/manrope-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Royal Partners Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/partners-brand/fonts/manrope-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+@font-face {
+  font-family: "Royal Partners Unbounded";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("/partners-brand/fonts/unbounded-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: "Royal Partners Unbounded";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("/partners-brand/fonts/unbounded-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+}
+
+.partners-brand {
+  --color-bg: #0c0814;
+  --color-surface: #130e1d;
+  --color-surface-elev: #1e1730;
+  --color-tint: #1e1730;
+  --color-tint-strong: #2a2040;
+  --color-ink: #f0eae0;
+  --color-muted: #c4b8a8;
+  --color-subtle: #8a7d96;
+  --color-primary: #c6a4f5;
+  --color-primary-hover: #8b5fd6;
+  --color-primary-strong: #c6a4f5;
+  --color-primary-ink: #0c0814;
+  --color-accent: #c6a4f5;
+  --color-accent-hover: #8b5fd6;
+  --color-accent-ink: #0c0814;
+  --color-success: #cfe64f;
+  --color-danger: #f5a0c8;
+  --color-line: #2a2040;
+  --color-line-strong: #2a2040;
+  --font-sans: "Royal Partners Manrope", system-ui, sans-serif;
+  --font-display: "Royal Partners Unbounded", system-ui, sans-serif;
+  color-scheme: dark;
+  min-height: calc(100vh - 4rem);
+  background: #0c0814;
+  color: #f0eae0;
+  font-family: var(--font-sans);
+}
+.partners-brand h1,
+.partners-brand h2,
+.partners-brand h3,
+.partners-brand .font-display {
+  font-family: var(--font-display);
+  hyphens: none;
+}
+.partners-brand h1 {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+.partners-brand h2,
+.partners-brand h3 { font-weight: 700; letter-spacing: -0.025em; }
+.partners-wordmark-link { display: inline-block; max-width: 100%; margin-bottom: 1.5rem; }
+.partners-wordmark { width: 17rem; max-width: 100%; height: auto; }
+.partners-wordmark-link:hover { opacity: 0.8; }
+.partners-eyebrow {
+  margin-bottom: 0.875rem;
+  color: #cfe64f;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+.partners-brand .card {
+  border-color: rgba(255,255,255,0.1);
+  border-radius: 2.5rem;
+  background: rgba(255,255,255,0.05);
+  box-shadow: none;
+}
+.partners-brand .input {
+  border: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0;
+  background: transparent;
+  color: #f0eae0;
+  padding-inline: 0.5rem;
+  box-shadow: none;
+}
+.partners-brand input[type="search"].input { padding-left: 2.5rem; }
+.partners-brand .input::placeholder { color: #8a7d96; }
+.partners-brand .input:focus { border-bottom-color: #c6a4f5; box-shadow: none; }
+.partners-brand select option { background: #130e1d; color: #f0eae0; }
+.partners-brand .btn {
+  border-radius: 1rem;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  box-shadow: none;
+}
+.partners-brand .btn-primary {
+  background: #c6a4f5;
+  color: #0c0814;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.partners-brand .btn-primary:hover { background: #8b5fd6; color: #fff; box-shadow: none; }
+.partners-brand .btn-secondary { background: transparent; border-color: rgba(255,255,255,0.2); color: #f0eae0; }
+.partners-brand .btn-secondary:hover { border-color: #c6a4f5; color: #c6a4f5; }
+.partners-brand :focus-visible { outline-color: #c6a4f5; }
+.partners-brand ::selection { background: #c6a4f5; color: #0c0814; }
+.partners-brand input[type="date"] { color-scheme: dark; }
+.partner-status {
+  display: inline-flex;
+  border: 1px solid #2a2040;
+  border-radius: 9999px;
+  padding: 0.25rem 0.625rem;
+  color: #c4b8a8;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.partner-status--new { color: #c6a4f5; border-color: #8b5fd6; }
+.partner-status--reviewing { color: #cfe64f; border-color: rgba(207,230,79,0.35); }
+.partner-status--approved { color: #cfe64f; background: rgba(207,230,79,0.1); border-color: rgba(207,230,79,0.35); }
+.partner-status--declined { color: #f5a0c8; border-color: rgba(245,160,200,0.35); }
+.partner-notice {
+  border: 1px solid rgba(207,230,79,0.25);
+  border-radius: 1rem;
+  background: rgba(207,230,79,0.05);
+  padding: 0.875rem 1rem;
+  color: #cfe64f;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+@media (max-width: 639px) {
+  .partners-brand .card { border-radius: 1.5rem; }
+  .partners-wordmark { width: 15rem; }
+}

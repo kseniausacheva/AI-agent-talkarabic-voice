@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Download, Loader2, RefreshCw, Search, Users, X } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthGuard } from "@/components/AuthGuard";
+import "./partners.css";
 import {
   PARTNER_STATUSES, exportPartners, fetchPartner, fetchPartnerConfig, fetchPartners, updatePartner,
   type PartnerConfig, type PartnerDetail, type PartnerEvent, type PartnerList, type PartnerStatus,
@@ -12,10 +13,6 @@ import {
 
 const STATUS_LABELS: Record<PartnerStatus, string> = {
   new: "Новая заявка", reviewing: "На проверке", approved: "Одобрен", declined: "Отклонён", paused: "Приостановлен",
-};
-const STATUS_COLORS: Record<PartnerStatus, string> = {
-  new: "bg-tint text-primary-strong", reviewing: "bg-amber-50 text-amber-800", approved: "bg-green-50 text-green-800",
-  declined: "bg-red-50 text-red-800", paused: "bg-surface text-muted",
 };
 const PROFILE_LABELS: Record<string, string> = {
   companyName: "Название компании / имя партнёра", legalName: "Юридическое наименование", registrationNumber: "Регистрационный номер",
@@ -47,7 +44,7 @@ function failure(error: unknown): string {
 }
 
 function StatusBadge({ status }: { status: PartnerStatus }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-sm font-medium ${STATUS_COLORS[status] ?? "bg-surface text-muted"}`}>{STATUS_LABELS[status] ?? status}</span>;
+  return <span className={`partner-status partner-status--${status}`}>{STATUS_LABELS[status] ?? status}</span>;
 }
 
 export default function PartnersPage() {
@@ -98,11 +95,12 @@ function PartnersRegister() {
   }
 
   return (
-    <main className="flex-1 bg-surface/40">
+    <main className="partners-brand flex-1">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-primary-strong">La Royal Event · MICE</p>
+            <a href="https://www.royaleventandmice.com/en" className="partners-wordmark-link" aria-label="La Royal Event — основной сайт"><img src="/partners-brand/logo-horizontal.png" alt="La Royal Event" width="1400" height="197" className="partners-wordmark" /></a>
+            <p className="partners-eyebrow">MICE · Реестр поставщиков</p>
             <h1 className="font-display text-3xl text-ink sm:text-4xl">Партнёры</h1>
             <p className="mt-2 max-w-2xl text-base text-muted">Заявки поставщиков, проверка профиля и история работы с партнёром.</p>
           </div>
@@ -114,7 +112,7 @@ function PartnersRegister() {
           </div>
         </div>
 
-        {config && !config.intakeEnabled && <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Приём новых анкет сейчас выключен. Сохранённые заявки доступны для работы.</p>}
+        {config && !config.intakeEnabled && <p className="partner-notice mb-5">Приём новых анкет сейчас выключен. Сохранённые заявки доступны для работы.</p>}
         {exportError && <p role="alert" className="mb-5 text-sm text-danger">{exportError}</p>}
 
         <div className="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-3" aria-label="Статусы партнёров">
